@@ -18,8 +18,30 @@
   #include "config.h"
 #elif __has_include("src/config.h")
   #include "src/config.h"
-#else
-  #include "config.h"
+#endif
+
+// =========================================================================
+// CREDENCIALES Y PARÁMETROS (Si config.h no se copia al otro equipo)
+// =========================================================================
+#ifndef WIFI_SSID
+  #define WIFI_SSID       "iPhone Andres"
+  #define WIFI_PASSWORD   "andresj123"
+  #define FIREBASE_HOST   "https://motodiag-e6676-default-rtdb.firebaseio.com"
+  #define FIREBASE_AUTH   ""
+  #define TELEMETRY_INTERVAL_MS 1000
+  #define READ_INTERVAL_MS      TELEMETRY_INTERVAL_MS
+  #define SIMULACION_ACTIVA     true
+  #define PIN_DS18B20           4
+  #define ONE_WIRE_BUS_PIN      PIN_DS18B20
+  #define PIN_I2C_SDA           21
+  #define PIN_I2C_SCL           22
+  #define I2C_SDA_PIN           PIN_I2C_SDA
+  #define I2C_SCL_PIN           PIN_I2C_SCL
+  #define MPU6050_ADDR          0x68
+  #define MOTO_ID               "moto_yamaha_ycz110"
+  #define MOTO_MARCA            "Yamaha"
+  #define MOTO_MODELO           "YCZ 110"
+  #define MOTO_CILINDRAJE       "110cc"
 #endif
 
 // Sensores físicos: solo se requieren si la simulación está desactivada y las librerías están instaladas
