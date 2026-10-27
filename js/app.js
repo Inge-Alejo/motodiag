@@ -28,7 +28,21 @@ let usuarioActualAuth = null;
 let unsubscribeUserStatus = null;
 
 // =========================================================================
-// CONFIGURACIÓN OFICIAL DE FIREBASE (PROPORCIONADA POR EL USUARIO)
+// CORREOS ADMINISTRADORES (ANDRÉS TIENE PRIVILEGIOS TOTALES AUTOMÁTICOS)
+// =========================================================================
+const ADMIN_EMAILS = [
+    "andresjf2002@gmail.com",
+    "andresjf2002"
+];
+
+function esAdmin(email) {
+    if (!email) return false;
+    const clean = email.toLowerCase().trim();
+    return clean.includes("andresjf2002") || clean === "andresjf2002@gmail.com" || clean === "admin";
+}
+
+// =========================================================================
+// CONFIGURACIÓN OFICIAL DE FIREBASE
 // =========================================================================
 const defaultFirebaseConfig = {
     apiKey: "AIzaSyCpAyag547_IB4vZZNldfmiS9X1Z6O8kII",
@@ -70,14 +84,12 @@ function inicializarFirebase() {
 // INICIALIZACIÓN AL CARGAR EL DOM
 // =========================================================================
 document.addEventListener("DOMContentLoaded", () => {
-    // Configurar íconos en los botones de ojo de contraseña
     document.querySelectorAll('.toggle-password').forEach(btn => {
         btn.innerHTML = ICON_EYE_OPEN;
     });
 
     inicializarFirebase();
 
-    // Comprobar si hay usuario guardado previamente
     const savedUser = localStorage.getItem("motoDiagUser");
     if (savedUser) {
         cargarPerfilUsuario(savedUser);
@@ -124,9 +136,11 @@ function handleEnter(event, type) {
  */
 async function iniciarSesionConGoogle() {
     if (!firebaseInicializado || !auth) {
-        alert("Iniciando Firebase... Si estás en pruebas locales, verifica tu conexión a internet.");
         inicializarFirebase();
-        if (!auth) return;
+        if (!auth) {
+            alert("No se pudo iniciar Firebase. Por favor recarga la página.");
+            return;
+        }
     }
 
     try {
@@ -177,19 +191,19 @@ async function iniciarSesion() {
         }
     }
 
-    // Modo local offline de respaldo
+    // Modo local offline
     const usuariosRegistrados = JSON.parse(localStorage.getItem("motoDiag_registered_users")) || {};
     if (usuariosRegistrados[usuarioOCorreo] && usuariosRegistrados[usuarioOCorreo].password === contrasena) {
         cargarPerfilUsuario(usuarioOCorreo);
     } else if (usuarioOCorreo === "admin" && contrasena === "1234") {
         cargarPerfilUsuario("admin");
     } else {
-        alert("Credenciales incorrectas. Si tu cuenta es nueva en Firebase, asegúrate de haber sido aprobado.");
+        alert("Credenciales incorrectas.");
     }
 }
 
 /**
- * 3. SOLICITUD DE REGISTRO DE USUARIO (ESTADO POR DEFECTO: 'pending')
+ * 3. SOLICITUD DE REGISTRO DE USUARIO
  */
 async function registrarUsuario() {
     const regUser = document.getElementById("reg-user").value.trim();
@@ -205,7 +219,7 @@ async function registrarUsuario() {
     }
 
     if (regPass.length < 6) {
-        alert("La contraseña debe tener un mínimo de 6 caracteres.");
+        alert("La contraseña debe tener al menos 6 caracteres.");
         return;
     }
 
@@ -221,19 +235,28 @@ async function registrarUsuario() {
 
             await user.updateProfile({ displayName: regUser.split("@")[0] });
 
-            // Registrar en Firestore con status: 'pending' (Sólo tú apruebas en la consola)
+            const esAdministrador = esAdmin(user.email);
+            const statusInicial = esAdministrador ? "approved" : "pending";
+            const rolInicial = esAdministrador ? "admin" : "usuario";
+
             await db.collection("users").doc(user.uid).set({
                 uid: user.uid,
                 email: user.email,
                 displayName: regUser.split("@")[0],
-                status: "pending",
-                rol: "usuario",
+                status: statusInicial,
+                rol: rolInicial,
                 moto: { marca, modelo, cilindraje, anio },
                 creadoEn: new Date().toISOString()
             });
 
             guardarDatosMotoLocal(regUser.split("@")[0], { marca, modelo, cilindraje, anio });
-            mostrarPantallaPendiente(user);
+
+            if (esAdministrador) {
+                alert("¡Bienvenido Administrador! Tu cuenta ha sido activada automáticamente.");
+                cargarPerfilUsuario(regUser.split("@")[0]);
+            } else {
+                mostrarPantallaPendiente(user);
+            }
             return;
         } catch (error) {
             console.error("Error en registro Firebase:", error);
@@ -261,7 +284,7 @@ async function registrarUsuario() {
 }
 
 /**
- * 4. PROCESAR USUARIO AUTENTICADO Y COMPROBAR STATUS ('approved' vs 'pending')
+ * 4. PROCESAR USUARIO AUTENTICADO Y COMPROBAR STATUS
  */
 async function procesarUsuarioAutenticado(user, proveedor) {
     usuarioActualAuth = user;
@@ -275,44 +298,69 @@ async function procesarUsuarioAutenticado(user, proveedor) {
         const userDocRef = db.collection("users").doc(user.uid);
         const docSnap = await userDocRef.get();
 
+        const esAdministrador = esAdmin(user.email);
+
         if (!docSnap.exists) {
-            // Usuario entra con Google por primera vez -> Asignar status: 'pending'
+            // Documento no existe en Firestore -> Crearlo
             const nuevoRegistro = {
                 uid: user.uid,
                 email: user.email,
                 displayName: user.displayName || user.email.split("@")[0],
                 foto: user.photoURL || "",
-                status: "pending", // <--- Bloqueado hasta aprobación del Administrador
-                rol: "usuario",
+                status: esAdministrador ? "approved" : "pending",
+                rol: esAdministrador ? "admin" : "usuario",
                 proveedor: proveedor,
                 moto: { marca: "Yamaha", modelo: "YCZ", cilindraje: "110cc", anio: "2024" },
                 creadoEn: new Date().toISOString()
             };
             await userDocRef.set(nuevoRegistro);
-            mostrarPantallaPendiente(user);
-            activarEscuchaAprobacionEnTiempoReal(user.uid);
+
+            if (esAdministrador) {
+                activarModoAdministrador();
+                cargarPerfilUsuario(user.displayName || user.email);
+            } else {
+                mostrarPantallaPendiente(user);
+                activarEscuchaAprobacionEnTiempoReal(user.uid);
+            }
             return;
         }
 
         const data = docSnap.data();
 
-        if (data.status === "approved" || data.rol === "admin") {
-            // USUARIO ADMITIDO
+        // Si es Andrés (Admin), forzar status 'approved' y rol 'admin' si estaba pendiente
+        if (esAdministrador) {
+            if (data.status !== "approved" || data.rol !== "admin") {
+                await userDocRef.update({ status: "approved", rol: "admin" });
+            }
+            activarModoAdministrador();
+            cargarPerfilUsuario(data.displayName || user.displayName || user.email);
+            if (data.moto) guardarDatosMotoLocal(data.displayName || user.displayName, data.moto);
+            conectarTelemetriaESP32();
+            return;
+        }
+
+        // Para usuarios estándar:
+        if (data.status === "approved") {
             if (unsubscribeUserStatus) unsubscribeUserStatus();
             cargarPerfilUsuario(data.displayName || user.displayName || user.email);
             if (data.moto) guardarDatosMotoLocal(data.displayName || user.displayName, data.moto);
             conectarTelemetriaESP32();
         } else if (data.status === "rejected") {
-            alert("Tu solicitud de acceso ha sido rechazada por el Administrador.");
+            alert("Tu solicitud de acceso ha sido denegada por el Administrador.");
             cerrarSesion();
         } else {
-            // USUARIO PENDIENTE
+            // Estado: 'pending'
             mostrarPantallaPendiente(user);
             activarEscuchaAprobacionEnTiempoReal(user.uid);
         }
     } catch (err) {
         console.error("Error al consultar status en Firestore:", err);
-        mostrarPantallaPendiente(user);
+        if (esAdmin(user.email)) {
+            activarModoAdministrador();
+            cargarPerfilUsuario(user.displayName || user.email);
+        } else {
+            mostrarPantallaPendiente(user);
+        }
     }
 }
 
@@ -377,7 +425,7 @@ async function verificarEstadoAprobacion() {
                 if (data.moto) guardarDatosMotoLocal(data.displayName || usuarioActualAuth.displayName, data.moto);
                 conectarTelemetriaESP32();
             } else {
-                alert("Tu estado actual sigue siendo: '" + (data.status || "pending") + "'.\n\nEl administrador debe cambiar el campo status a 'approved' en la consola de Firebase.");
+                alert("Tu estado actual sigue siendo: '" + (data.status || "pending") + "'.\n\nEl administrador debe cambiar el campo status a 'approved'.");
             }
         }
     } catch (e) {
@@ -424,9 +472,12 @@ function cerrarSesion() {
     const loginScreen = document.getElementById("login-screen");
     const appContainer = document.getElementById("app-container");
     const chatWidget = document.getElementById("chatWidget");
+    const adminMenu = document.getElementById("menu-admin-usuarios");
 
     if (appContainer) appContainer.style.display = "none";
     if (chatWidget) chatWidget.style.display = "none";
+    if (adminMenu) adminMenu.style.display = "none";
+
     if (loginScreen) {
         loginScreen.style.display = "flex";
         loginScreen.style.opacity = "1";
@@ -475,6 +526,141 @@ function cargarPerfilUsuario(nombreUsuario) {
     if (displayUser) displayUser.innerText = nombreUsuario;
 
     cargarDatosMoto(nombreUsuario);
+
+    if (usuarioActualAuth && esAdmin(usuarioActualAuth.email)) {
+        activarModoAdministrador();
+    }
+}
+
+// =========================================================================
+// PANEL EXCLUSIVO DE ADMINISTRACIÓN (APROBACIÓN CON 1 CLIC)
+// =========================================================================
+function activarModoAdministrador() {
+    const adminMenu = document.getElementById("menu-admin-usuarios");
+    if (adminMenu) {
+        adminMenu.style.display = "flex";
+    }
+    contarUsuariosPendientes();
+}
+
+async function contarUsuariosPendientes() {
+    if (!db) return;
+    try {
+        const snap = await db.collection("users").where("status", "==", "pending").get();
+        const badge = document.getElementById("badge-pendientes-count");
+        if (badge) {
+            if (snap.size > 0) {
+                badge.innerText = snap.size;
+                badge.style.display = "inline-block";
+            } else {
+                badge.style.display = "none";
+            }
+        }
+    } catch(e) {}
+}
+
+async function cargarListaUsuariosAdmin() {
+    const tbody = document.getElementById("tbody-admin-usuarios");
+    if (!tbody || !db) return;
+
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748B; padding: 20px;">Cargando usuarios desde Firestore...</td></tr>';
+
+    try {
+        const snapshot = await db.collection("users").get();
+        if (snapshot.empty) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748B; padding: 20px;">No hay usuarios registrados aún.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = "";
+        let countPendientes = 0;
+
+        snapshot.forEach(doc => {
+            const u = doc.data();
+            const uid = doc.id;
+            const esEsteAdmin = esAdmin(u.email);
+            const status = u.status || (esEsteAdmin ? "approved" : "pending");
+
+            if (status === "pending") countPendientes++;
+
+            let badgeHtml = '<span class="badge bg-warning">Pendiente</span>';
+            if (status === "approved") {
+                badgeHtml = '<span class="badge bg-success">Aprobado</span>';
+            } else if (status === "rejected") {
+                badgeHtml = '<span class="badge bg-danger">Rechazado</span>';
+            }
+
+            let motoStr = "Sin moto registrada";
+            if (u.moto) {
+                motoStr = `${u.moto.marca || "Yamaha"} ${u.moto.modelo || "YCZ"} (${u.moto.cilindraje || "110cc"})`;
+            }
+
+            let accionBtn = "";
+            if (esEsteAdmin) {
+                accionBtn = '<span style="color: #64748B; font-size: 12px; font-weight: 600;">👑 Administrador Principal</span>';
+            } else if (status === "pending") {
+                accionBtn = `
+                    <button type="button" onclick="cambiarEstadoUsuario('${uid}', 'approved')" style="background: #10B981; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 12px; margin-right: 5px;">
+                        ✅ Aprobar Acceso
+                    </button>
+                    <button type="button" onclick="cambiarEstadoUsuario('${uid}', 'rejected')" style="background: #EF4444; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 12px;">
+                        ❌ Rechazar
+                    </button>
+                `;
+            } else if (status === "approved") {
+                accionBtn = `
+                    <button type="button" onclick="cambiarEstadoUsuario('${uid}', 'pending')" style="background: #F59E0B; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 12px;">
+                        🔒 Revocar Acceso
+                    </button>
+                `;
+            } else {
+                accionBtn = `
+                    <button type="button" onclick="cambiarEstadoUsuario('${uid}', 'approved')" style="background: #10B981; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 12px;">
+                        ✅ Habilitar
+                    </button>
+                `;
+            }
+
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>
+                    <strong>${u.displayName || u.email.split("@")[0]}</strong><br>
+                    <span style="color: #64748B; font-size: 11px;">${u.email}</span>
+                </td>
+                <td>${u.proveedor === "google" ? "🔵 Google" : "✉️ Correo"}</td>
+                <td>${motoStr}</td>
+                <td>${badgeHtml}</td>
+                <td>${accionBtn}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        const badgeCount = document.getElementById("badge-pendientes-count");
+        if (badgeCount) {
+            if (countPendientes > 0) {
+                badgeCount.innerText = countPendientes;
+                badgeCount.style.display = "inline-block";
+            } else {
+                badgeCount.style.display = "none";
+            }
+        }
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #EF4444; padding: 20px;">Error al cargar usuarios: ${err.message}</td></tr>`;
+    }
+}
+
+async function cambiarEstadoUsuario(uid, nuevoEstado) {
+    if (!db) return;
+    try {
+        await db.collection("users").doc(uid).update({
+            status: nuevoEstado,
+            actualizadoPorAdminEn: new Date().toISOString()
+        });
+        alert(`¡Estado del usuario actualizado a: ${nuevoEstado}!`);
+        cargarListaUsuariosAdmin();
+    } catch (err) {
+        alert("Error al actualizar usuario en Firestore: " + err.message);
+    }
 }
 
 // =========================================================================
@@ -537,20 +723,29 @@ function guardarDatosMoto() {
 // =========================================================================
 // NAVEGACIÓN ENTRE VISTAS DEL PANEL LATERAL
 // =========================================================================
-function switchView(viewName, element) {
-    document.querySelectorAll(".view-content").forEach(view => {
-        view.classList.remove("active");
-    });
-    document.querySelectorAll(".menu-item").forEach(item => {
-        item.classList.remove("active");
-    });
+function switchView(viewId, menuItem) {
+    const views = document.querySelectorAll('.view');
+    views.forEach(view => view.classList.remove('active-view'));
 
-    const targetView = document.getElementById(viewName);
-    if (targetView) targetView.classList.add("active");
-    if (element) element.classList.add("active");
+    const menuItems = document.querySelectorAll('.menu-item:not(.ai-chat)');
+    menuItems.forEach(item => item.classList.remove('active'));
 
-    if (viewName === "dispositivo") {
+    const target = document.getElementById(viewId);
+    if (target) target.classList.add('active-view');
+    if (menuItem) menuItem.classList.add('active');
+
+    if (viewId === 'dispositivo') {
         conectarTelemetriaESP32();
+    }
+    if (viewId === 'admin-usuarios') {
+        cargarListaUsuariosAdmin();
+    }
+}
+
+function toggleChat() {
+    const chatWidget = document.getElementById('chatWidget');
+    if (chatWidget) {
+        chatWidget.style.display = (chatWidget.style.display === 'flex') ? 'none' : 'flex';
     }
 }
 
