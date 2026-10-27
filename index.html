@@ -3,14 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Diagnóstico Predictivo - Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%232563EB'/><path d='M10 16 L14 12 L18 20 L22 14' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+    <title>MotoDiag IA - Diagnóstico Predictivo & Telemetría</title>
     <link rel="stylesheet" href="css/styles.css">
+    <!-- Chart.js para visualización de telemetría -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Firebase SDK (Compat mode v10 para Auth, Firestore y Realtime Database) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
+    <!-- PANTALLA DE AUTENTICACIÓN / LOGIN & APROBACIÓN -->
     <div id="login-screen">
         <div class="login-box">
+            <!-- Logo SVG de MotoDiag -->
             <svg width="220" height="50" viewBox="0 0 220 50" xmlns="http://www.w3.org/2000/svg" style="margin-bottom: 10px;">
                 <g transform="translate(0, 10)">
                     <path d="M15,2 L28,9.5 L28,24.5 L15,32 L2,24.5 L2,9.5 Z" fill="none" stroke="#2563EB" stroke-width="2.5" stroke-linejoin="round"/>
@@ -21,25 +31,54 @@
                 </g>
             </svg>
 
+            <!-- FORMULARIO 1: INICIO DE SESIÓN -->
             <div id="form-login" class="auth-form active-form">
-                <p style="color: #64748B; margin-bottom: 20px; font-size: 14px;">Inicia sesión para continuar</p>
-                <input type="text" id="login-user" placeholder="Usuario..." onkeypress="handleEnter(event, 'login')">
+                <p style="color: #64748B; margin-bottom: 15px; font-size: 14px;">Inicia sesión para acceder a la telemetría</p>
+                
+                <!-- Botón de Inicio con Google -->
+                <button type="button" class="btn-google" onclick="iniciarSesionConGoogle()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 8px;">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                    Continuar con Google
+                </button>
+
+                <div class="auth-divider"><span>o con tu usuario / correo</span></div>
+
+                <input type="text" id="login-user" placeholder="Usuario o Correo..." onkeypress="handleEnter(event, 'login')">
                 
                 <div class="password-container">
                     <input type="password" id="login-pass" placeholder="Contraseña..." onkeypress="handleEnter(event, 'login')">
                     <button type="button" class="toggle-password" onclick="togglePasswordVisibility('login-pass', this)">👁️</button>
                 </div>
 
-                <button onclick="iniciarSesion()">Entrar</button>
+                <button onclick="iniciarSesion()">Entrar al Sistema</button>
                 <div class="auth-links">
                     <a onclick="switchAuthForm('form-register')">¿No tienes cuenta? Regístrate y registra tu moto</a>
                     <a onclick="switchAuthForm('form-recovery')" style="font-size: 13px; color: #64748B;">¿Olvidaste tu contraseña?</a>
                 </div>
             </div>
 
+            <!-- FORMULARIO 2: REGISTRO DE USUARIO -->
             <div id="form-register" class="auth-form">
                 <p style="color: #64748B; margin-bottom: 15px; font-size: 14px;">Crea tu cuenta e ingresa los datos de tu moto</p>
-                <input type="text" id="reg-user" placeholder="Nombre de usuario...">
+
+                <button type="button" class="btn-google" onclick="iniciarSesionConGoogle()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 8px;">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                    Registrarme con Google
+                </button>
+
+                <div class="auth-divider"><span>o registra correo y contraseña</span></div>
+
+                <input type="text" id="reg-user" placeholder="Nombre de usuario o correo...">
                 
                 <div class="password-container">
                     <input type="password" id="reg-pass" placeholder="Contraseña...">
@@ -47,19 +86,20 @@
                 </div>
 
                 <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 15px 0;">
-                <input type="text" id="reg-moto-marca" placeholder="Marca de la moto (ej. Yamaha)...">
-                <input type="text" id="reg-moto-modelo" placeholder="Modelo / Referencia (ej. YCZ)...">
-                <input type="text" id="reg-moto-cilindraje" placeholder="Cilindraje (ej. 110cc)...">
-                <input type="text" id="reg-moto-anio" placeholder="Año de fabricación (ej. 2024)...">
-                <button onclick="registrarUsuario()" style="background: #10B981;">Registrarme en el Sistema</button>
+                <input type="text" id="reg-moto-marca" placeholder="Marca de la moto (ej. Yamaha)..." value="Yamaha">
+                <input type="text" id="reg-moto-modelo" placeholder="Modelo / Referencia (ej. YCZ)..." value="YCZ">
+                <input type="text" id="reg-moto-cilindraje" placeholder="Cilindraje (ej. 110cc)..." value="110cc">
+                <input type="text" id="reg-moto-anio" placeholder="Año de fabricación (ej. 2024)..." value="2024">
+                <button onclick="registrarUsuario()" style="background: #10B981;">Solicitar Registro</button>
                 <div class="auth-links">
                     <a onclick="switchAuthForm('form-login')">¿Ya tienes cuenta? Inicia sesión</a>
                 </div>
             </div>
 
+            <!-- FORMULARIO 3: RECUPERACIÓN -->
             <div id="form-recovery" class="auth-form">
                 <p style="color: #64748B; margin-bottom: 20px; font-size: 14px;">Restablecer contraseña</p>
-                <input type="text" id="rec-user" placeholder="Tu usuario...">
+                <input type="text" id="rec-user" placeholder="Tu usuario o correo...">
                 
                 <div class="password-container">
                     <input type="password" id="rec-new-pass" placeholder="Nueva contraseña...">
@@ -71,10 +111,34 @@
                     <a onclick="switchAuthForm('form-login')">Volver al inicio de sesión</a>
                 </div>
             </div>
+
+            <!-- PANTALLA 4: ESPERA DE APROBACIÓN POR ADMINISTRADOR -->
+            <div id="screen-pending-approval" class="auth-form">
+                <div class="lock-icon-container">
+                    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                </div>
+                <h3 style="margin: 10px 0 6px 0; color: #0F172A; font-size: 18px;">Acceso Pendiente de Aprobación</h3>
+                <p style="color: #64748B; font-size: 13px; line-height: 1.5; margin-bottom: 12px;">
+                    Hola <strong id="pending-user-name">Usuario</strong> (<span id="pending-user-email"></span>). Tu cuenta ha sido registrada en el sistema pero requiere <strong>autorización directa del Administrador</strong> en Firebase para ver la telemetría.
+                </p>
+                <div class="pending-info-box">
+                    <div style="font-size: 11px; color: #64748B; margin-bottom: 3px;">Identificador de Usuario (UID para Firebase):</div>
+                    <code id="pending-user-uid" style="display:block; font-size: 11px; word-break: break-all; background: #E2E8F0; padding: 6px; border-radius: 4px; font-family: monospace;"></code>
+                </div>
+                <button onclick="verificarEstadoAprobacion()" style="background: #2563EB; margin-top: 10px;">🔄 Comprobar Si Ya Fui Aprobado</button>
+                <div class="auth-links" style="margin-top: 12px;">
+                    <a onclick="cerrarSesion()" style="color: #EF4444; cursor: pointer;">Cerrar Sesión / Salir</a>
+                </div>
+            </div>
         </div>
     </div>
 
+    <!-- CONTENEDOR PRINCIPAL DE LA APLICACIÓN -->
     <div id="app-container">
+        <!-- BARRA LATERAL (SIDEBAR) -->
         <div class="sidebar">
             <svg width="220" height="50" viewBox="0 0 220 50" xmlns="http://www.w3.org/2000/svg" style="margin-bottom: 20px;">
                 <g transform="translate(0, 10)">
@@ -86,8 +150,11 @@
                 </g>
             </svg>
 
+            <!-- MENÚ DE NAVEGACIÓN -->
             <div class="menu-item active" onclick="switchView('panel-general', this)">Panel General</div>
             <div class="menu-item" onclick="switchView('telemetria', this)">Telemetría en Vivo</div>
+            <!-- NUEVA OPCIÓN: DISPOSITIVO ESP32 -->
+            <div class="menu-item" onclick="switchView('dispositivo', this)">Dispositivo ESP32</div>
             <div class="menu-item" onclick="switchView('historial', this)">Historial de Fallas</div>
             <div class="menu-item" onclick="switchView('configuracion', this)">Configuración & Moto</div>
             
@@ -95,6 +162,7 @@
             <div class="logout-btn" onclick="cerrarSesion()">Cerrar Sesión</div>
         </div>
 
+        <!-- CONTENIDO PRINCIPAL -->
         <div class="main-content">
             <div class="topbar">
                 <h1 id="page-title">Resumen del Motor</h1>
@@ -105,6 +173,7 @@
 
             <div class="dashboard">
 
+                <!-- VISTA 1: PANEL GENERAL -->
                 <div id="panel-general" class="view active-view">
                     <div class="cards-grid grid-3">
                         <div class="card">
@@ -156,6 +225,7 @@
                     </div>
                 </div>
 
+                <!-- VISTA 2: TELEMETRÍA EN VIVO (MÓDULO EXISTENTE CONSERVADO) -->
                 <div id="telemetria" class="view">
                     <div class="cards-grid grid-2">
                         <div class="card warning">
@@ -183,6 +253,129 @@
                     </div>
                 </div>
 
+                <!-- VISTA NUEVA: DISPOSITIVO ESP32 (HARDWARE TINKERED.AI & YAMAHA YCZ 110) -->
+                <div id="dispositivo" class="view">
+                    <!-- Cabecera de Estado del Dispositivo -->
+                    <div class="device-header-card">
+                        <div class="device-header-info">
+                            <h2>
+                                Dispositivo ESP32-D Telemetría
+                                <span id="esp32-status-badge" class="badge-offline">En espera de datos</span>
+                            </h2>
+                            <p>
+                                <strong>Vehículo:</strong> Yamaha YCZ 110 | 
+                                <strong>WiFi AP:</strong> <span id="esp32-wifi-name">iPhone Andres</span> | 
+                                <strong>IP:</strong> <span id="esp32-ip-addr">--</span> | 
+                                <strong>Última Trama:</strong> <span id="esp32-last-seen">Nunca</span>
+                            </p>
+                        </div>
+                        <div class="device-header-actions">
+                            <button onclick="toggleSimularESP32()" id="btn-simular-esp32" class="btn-save" style="background: #6366F1; font-size: 13px; padding: 8px 14px;">
+                                ⚡ Simular Envío ESP32
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Ficha Técnica de Hardware Conectado -->
+                    <div class="hardware-spec-grid">
+                        <div class="spec-card">
+                            <h4>📟 Microcontrolador</h4>
+                            <p style="margin: 4px 0; font-size: 13px;"><strong>Modelo:</strong> ESP32 DevKit V1 (30 pines)</p>
+                            <p style="margin: 4px 0; font-size: 13px;"><strong>Transmisión:</strong> HTTP / Firebase RTDB</p>
+                            <p style="margin: 4px 0; font-size: 13px;"><strong>Frecuencia:</strong> <span class="pin-badge">500 ms</span></p>
+                        </div>
+                        <div class="spec-card">
+                            <h4>🌡️ Sensor Térmico</h4>
+                            <p style="margin: 4px 0; font-size: 13px;"><strong>Sensor:</strong> DS18B20 Blindado Sumergible</p>
+                            <p style="margin: 4px 0; font-size: 13px;"><strong>Pin Datos:</strong> <span class="pin-badge">GPIO 4</span> (Pull-up 4.7kΩ)</p>
+                            <p style="margin: 4px 0; font-size: 13px;"><strong>Ubicación:</strong> Culata / Cilindro YCZ 110</p>
+                        </div>
+                        <div class="spec-card">
+                            <h4>📳 Sensor Inercial (IMU)</h4>
+                            <p style="margin: 4px 0; font-size: 13px;"><strong>Sensor:</strong> MPU6050 (Acelerómetro 6-DOF)</p>
+                            <p style="margin: 4px 0; font-size: 13px;"><strong>Pines I2C:</strong> <span class="pin-badge">SDA: 21</span> | <span class="pin-badge">SCL: 22</span></p>
+                            <p style="margin: 4px 0; font-size: 13px;"><strong>Dirección I2C:</strong> <span class="pin-badge">0x68</span></p>
+                        </div>
+                    </div>
+
+                    <!-- Métricas en Vivo del Hardware -->
+                    <div class="cards-grid grid-3">
+                        <div class="card warning">
+                            <h3>Temperatura Real Motor (DS18B20)</h3>
+                            <p class="value" id="val-esp32-temp" style="font-size: 26px; color: #0F172A; margin: 5px 0;">-- °C</p>
+                            <small id="val-esp32-temp-state" style="color: #64748B; font-weight: 600;">Esperando lectura de sonda...</small>
+                        </div>
+                        <div class="card danger">
+                            <h3>Vibración y Aceleración Total |A|</h3>
+                            <p class="value" id="val-esp32-vibe-mag" style="font-size: 26px; color: #0F172A; margin: 5px 0;">-- G</p>
+                            <small id="val-esp32-vibe-state" style="color: #64748B; font-weight: 600;">Esperando MPU6050...</small>
+                        </div>
+                        <div class="card">
+                            <h3>Señal y Telemetría WiFi</h3>
+                            <p class="value" id="val-esp32-packets" style="font-size: 26px; color: #2563EB; margin: 5px 0;">0 tram.</p>
+                            <small id="val-esp32-rssi" style="color: #64748B; font-weight: 600;">Red: iPhone Andres</small>
+                        </div>
+                    </div>
+
+                    <!-- Desglose de 3 Ejes de la IMU -->
+                    <div class="panel" style="margin-bottom: 20px;">
+                        <h3 style="margin-bottom: 10px;">Desglose Acelerometría Tridimensional MPU6050</h3>
+                        <div class="axis-container">
+                            <div class="axis-item">
+                                <div class="label">Eje X (Lateral)</div>
+                                <div class="val" id="val-mpu-ax">0.00 G</div>
+                            </div>
+                            <div class="axis-item">
+                                <div class="label">Eje Y (Longitudinal)</div>
+                                <div class="val" id="val-mpu-ay">0.00 G</div>
+                            </div>
+                            <div class="axis-item">
+                                <div class="label">Eje Z (Pistón / Vertical)</div>
+                                <div class="val" id="val-mpu-az">0.00 G</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Gráfico en Vivo del Dispositivo y Monitor Terminal -->
+                    <div class="section-grid" style="grid-template-columns: 1fr 1fr;">
+                        <div class="panel">
+                            <h3>Dinámica en Tiempo Real del Dispositivo</h3>
+                            <div style="height: 260px; position: relative;">
+                                <canvas id="graficoDispositivoReal"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <h3>Monitor de Tramas ESP32</h3>
+                                <button onclick="limpiarTerminalESP32()" style="background: none; border: 1px solid #CBD5E1; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer;">Limpiar</button>
+                            </div>
+                            <div class="terminal-monitor" id="terminal-esp32-logs">
+                                <div class="time">[00:00:00] Iniciando receptor de telemetria MotoDiag...</div>
+                                <div>Esperando enlace con Firebase o activacion de simulacion...</div>
+                            </div>
+
+                            <!-- Panel Colapsable de Credenciales Firebase -->
+                            <div class="firebase-config-box">
+                                <details>
+                                    <summary style="cursor: pointer; font-size: 13px; font-weight: 600; color: #2563EB;">
+                                        ⚙️ Configuración de Credenciales de Firebase (Haz clic para ver/editar)
+                                    </summary>
+                                    <div style="margin-top: 10px; display: grid; gap: 8px;">
+                                        <input type="text" id="fb-cfg-apiKey" placeholder="apiKey (ej. AIzaSy...)" style="font-size: 12px; padding: 6px;">
+                                        <input type="text" id="fb-cfg-projectId" placeholder="projectId (ej. motodiag-123)" style="font-size: 12px; padding: 6px;">
+                                        <input type="text" id="fb-cfg-dbUrl" placeholder="databaseURL (ej. https://motodiag-123-default-rtdb.firebaseio.com)" style="font-size: 12px; padding: 6px;">
+                                        <button onclick="guardarConfiguracionFirebase()" class="btn-save" style="background: #10B981; padding: 6px; font-size: 12px;">
+                                            Guardar y Conectar a Firebase
+                                        </button>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VISTA 3: HISTORIAL DE FALLAS -->
                 <div id="historial" class="view">
                     <div class="panel">
                         <h3>Registro de Anomalías e Historial (Base de Datos)</h3>
@@ -197,6 +390,7 @@
                     </div>
                 </div>
 
+                <!-- VISTA 4: CONFIGURACIÓN & MOTO (MÓDULO EXISTENTE CONSERVADO) -->
                 <div id="configuracion" class="view">
                     <div class="section-grid" style="grid-template-columns: 1fr 1fr;">
                         <div class="panel">
@@ -228,6 +422,7 @@
         </div>
     </div>
 
+    <!-- WIDGET DEL ASISTENTE IA (GEMINI) -->
     <div class="chat-widget" id="chatWidget">
         <div class="chat-header">
             <div>Asistente IA (Gemini) <span>🟢</span></div>
@@ -235,7 +430,7 @@
         </div>
         <div class="chat-messages" id="chat-messages-container">
             <div class="message bot" id="bot-greeting">
-                Hola. Estoy conectado con Gemini para ayudarte con cualquier duda sobre tu moto y sus fallas. ¿Qué sucede?
+                Hola. Estoy conectado con Gemini para ayudarte con cualquier duda sobre tu Yamaha YCZ 110, mantenimiento y fallas. ¿Qué sucede?
             </div>
         </div>
         <div class="chat-input">
