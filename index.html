@@ -105,9 +105,7 @@
 
             <!-- MENÚ DE NAVEGACIÓN -->
             <div class="menu-item active" onclick="switchView('panel-general', this)">Panel General</div>
-            <div class="menu-item" onclick="switchView('telemetria', this)">Telemetría en Vivo</div>
-            <!-- OPCIÓN: DISPOSITIVO ESP32 -->
-            <div class="menu-item" onclick="switchView('dispositivo', this)">Dispositivo ESP32</div>
+            <div class="menu-item" onclick="switchView('dispositivo', this)">Telemetría en Vivo</div>
             <div class="menu-item" onclick="switchView('historial', this)">Historial de Fallas</div>
             <div class="menu-item" onclick="switchView('configuracion', this)">Configuración & Moto</div>
             <div class="menu-item" onclick="toggleChat()">Asistente IA</div>
@@ -183,58 +181,13 @@
                     </div>
                 </div>
 
-                <!-- VISTA 2: TELEMETRÍA EN VIVO (MÓDULO EXISTENTE CONSERVADO) -->
-                <div id="telemetria" class="view">
-
-                      <!-- Barra de Control de Medición en Telemetría en Vivo -->
-                      <div id="telemetria-ctrl-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #FFFFFF; padding: 14px 18px; border-radius: 12px; border: 1px solid #E2E8F0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-wrap: wrap; gap: 10px;">
-                          <div>
-                              <strong style="color: #0F172A; font-size: 14px;">Adquisición de Telemetría (Yamaha YCZ 110):</strong>
-                              <span id="telemetria-live-status-lbl" style="margin-left: 8px; font-size: 13px; color: #10B981; font-weight: 600;">Sensores activos en rango óptimo</span>
-                          </div>
-                          <div style="display: flex; gap: 10px;">
-                              <button type="button" class="btn-save" onclick="iniciarMedicionSimulada()" style="background: #10B981; padding: 8px 16px; font-size: 13px; margin: 0; border-radius: 6px;">
-                                  Iniciar Medición
-                              </button>
-                              <button type="button" class="btn-save" onclick="detenerMedicionSimulada()" style="background: #EF4444; padding: 8px 16px; font-size: 13px; margin: 0; border-radius: 6px;">
-                                  Parar y Guardar en BD
-                              </button>
-                          </div>
-                      </div>
-    
-                    <div class="cards-grid grid-2">
-                        <div class="card warning">
-                            <h3>Sensor de Temperatura</h3>
-                            <p class="value" id="val-temp-telemetria" style="font-size: 20px; color: #64748B;">-- °C</p>
-                        </div>
-                        <div class="card danger">
-                            <h3>Sensor de Vibración (IMU)</h3>
-                            <p class="value" id="val-vib-telemetria" style="font-size: 20px; color: #64748B;">Sin datos</p>
-                        </div>
-                    </div>
-                    <div class="section-grid" style="grid-template-columns: 1fr 1fr;">
-                        <div class="panel">
-                            <h3>Temperatura en Tiempo Real</h3>
-                            <div style="height: 280px; position: relative;">
-                                <canvas id="graficoTempRt"></canvas>
-                            </div>
-                        </div>
-                        <div class="panel">
-                            <h3>Flujo de Datos MPU6050</h3>
-                            <div style="height: 280px; position: relative;">
-                                <canvas id="graficoMpuRt"></canvas>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- VISTA NUEVA: DISPOSITIVO ESP32 (HARDWARE TINKERED.AI & YAMAHA YCZ 110) -->
+                <!-- VISTA 2: TELEMETRÍA EN VIVO (HARDWARE ESP32 & YAMAHA YCZ 110) -->
                 <div id="dispositivo" class="view">
-                    <!-- Cabecera de Estado del Dispositivo -->
+                    <!-- Cabecera de Estado del Dispositivo / Telemetría -->
                     <div class="device-header-card">
                         <div class="device-header-info">
                             <h2>
-                                Dispositivo ESP32-D Telemetría
+                                Telemetría en Vivo
                                 <span id="esp32-status-badge" class="badge-offline">En espera de hardware real</span>
                             </h2>
                             <p>
@@ -312,7 +265,7 @@
                     <!-- Gráfico en Vivo del Dispositivo y Monitor Terminal -->
                     <div class="section-grid" style="grid-template-columns: 1fr 1fr;">
                         <div class="panel">
-                            <h3>Dinámica en Tiempo Real del Dispositivo</h3>
+                            <h3>Dinámica de Telemetría en Tiempo Real</h3>
                             <div style="height: 260px; position: relative;">
                                 <canvas id="graficoDispositivoReal"></canvas>
                             </div>

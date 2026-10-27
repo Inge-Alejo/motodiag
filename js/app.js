@@ -663,7 +663,7 @@ function simularRegistroDiagnostico() {
     const eventos = [
         { mod: "Telemetría Térmica", desc: "Monitoreo culata estable: 89.4°C en rango óptimo de operación", sev: "Normal" },
         { mod: "Sensor MPU6050", desc: "Vibración armónica parejo 0.94g en régimen continuo (Yamaha YCZ 110)", sev: "Normal" },
-        { mod: "Dispositivo ESP32", desc: "Sincronización por WiFi iPhone Andres verificada sin pérdida de tramas", sev: "Normal" },
+        { mod: "Telemetría en Vivo", desc: "Sincronización por WiFi iPhone Andres verificada sin pérdida de tramas", sev: "Normal" },
         { mod: "Mantenimiento Preventivo", desc: "Revisión de bujía NGK CR6HSA y nivel de lubricante Yamalube 20W-50", sev: "Preventivo" }
     ];
     const rand = eventos[Math.floor(Math.random() * eventos.length)];
@@ -698,7 +698,15 @@ function switchView(viewId, menuItem) {
     if (target) target.classList.add('active-view');
     if (menuItem) menuItem.classList.add('active');
 
-    if (viewId === 'dispositivo') {
+    const pageTitle = document.getElementById("page-title");
+    if (pageTitle) {
+        if (viewId === 'panel-general') pageTitle.innerText = "Resumen del Motor";
+        else if (viewId === 'dispositivo' || viewId === 'telemetria') pageTitle.innerText = "Telemetría en Vivo";
+        else if (viewId === 'historial') pageTitle.innerText = "Historial de Fallas";
+        else if (viewId === 'configuracion') pageTitle.innerText = "Configuración & Moto";
+    }
+
+    if (viewId === 'dispositivo' || viewId === 'telemetria') {
         conectarTelemetriaESP32();
     }
     if (viewId === 'configuracion') {
@@ -1061,7 +1069,7 @@ function detenerMedicionSimulada() {
 
     const vistaActiva = document.querySelector('.view.active-view');
     let nombreModulo = "Configuración & Moto";
-    if (vistaActiva && vistaActiva.id === "telemetria") {
+    if (vistaActiva && (vistaActiva.id === "telemetria" || vistaActiva.id === "dispositivo")) {
         nombreModulo = "Telemetría en Vivo";
     }
 
