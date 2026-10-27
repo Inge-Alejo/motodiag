@@ -1,4 +1,4 @@
-﻿# 🏍️ MotoDiag IA - Diagnóstico Predictivo & Telemetría para Motocicletas
+# 🏍️ MotoDiag IA - Diagnóstico Predictivo & Telemetría para Motocicletas
 
 Plataforma web moderna e interactiva para el monitoreo en tiempo real, análisis de vibración/temperatura y diagnóstico predictivo asistido por Inteligencia Artificial (Google Gemini) para motocicletas.
 
