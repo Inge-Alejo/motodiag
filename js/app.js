@@ -143,23 +143,22 @@ function conectarFirestoreTiempoReal() {
     try {
         window.firestoreListenerActivo = true;
         db.collection("historial_fallas")
-          .limit(30)
           .onSnapshot(snapshot => {
               if (snapshot && !snapshot.empty) {
                   const cloudItems = [];
                   snapshot.forEach(doc => {
                       cloudItems.push(doc.data());
                   });
-                  // Ordenar por timestamp descendente
                   cloudItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                   if (cloudItems.length > 0) {
                       localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(cloudItems));
                       renderizarFilasHistorialDOM(cloudItems);
                       actualizarAlertasPredictivasPanel(cloudItems);
+                      console.log("[Firestore Realtime] Sincronizado en vivo:", cloudItems.length, "registros");
                   }
               }
           }, err => {
-              console.warn("Aviso permisos Firestore (usa modo de prueba en Firebase Console si deseas sincronizar directo con Firestore):", err.message);
+              console.warn("[Firestore Realtime] Listener:", err.message);
           });
     } catch(e) {
         console.warn("Listener Firestore:", e.message);
@@ -493,32 +492,7 @@ function guardarDatosMoto() {
     alert(`¡Información de la motocicleta actualizada con éxito! Registrado en Historial de Fallas:\n\n${motoData.marca} ${motoData.modelo} (${motoData.cilindraje})`);
 }
 
-const registrosInicialesFallas = [
-    {
-        fecha: "26/10/2026, 08:30 PM",
-        modulo: "Telemetría en Vivo",
-        descripcion: "Ciclo térmico parejo y estable: 89.2°C | Vibración armónica 0.95g",
-        severidad: "Normal",
-        badgeClass: "bg-success",
-        estado: "Completado"
-    },
-    {
-        fecha: "25/10/2026, 04:15 PM",
-        modulo: "Dispositivo ESP32",
-        descripcion: "Sonda DS18B20 culata 88.7°C | IMU MPU6050 0.94g sincronizado por WiFi iPhone Andres",
-        severidad: "Normal",
-        badgeClass: "bg-success",
-        estado: "Completado"
-    },
-    {
-        fecha: "24/10/2026, 11:20 AM",
-        modulo: "Mantenimiento",
-        descripcion: "Inspección de bujía NGK CR6HSA y nivel de lubricante Yamalube 20W-50",
-        severidad: "Preventivo",
-        badgeClass: "bg-warning",
-        estado: "Al día"
-    }
-];
+const registrosInicialesFallas = [];
 
 
 // Renderizador del Historial en el DOM
@@ -556,32 +530,41 @@ function cargarHistorialFallas() {
     const tbody = document.getElementById("historial-tabla-body");
     if (!tbody) return;
 
+    // 1. Mostrar de inmediato los datos guardados en localStorage (sin parpadeos)
     let lista = [];
     let historialGuardado = localStorage.getItem("motoDiag_historial_fallas");
     if (historialGuardado) {
         try { lista = JSON.parse(historialGuardado); } catch(e){}
     }
 
-    if (!Array.isArray(lista) || lista.length === 0) {
-        lista = [...registrosInicialesFallas];
-        localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(lista));
+    if (Array.isArray(lista) && lista.length > 0) {
+        renderizarFilasHistorialDOM(lista);
+        actualizarAlertasPredictivasPanel(lista);
     }
 
-    renderizarFilasHistorialDOM(lista);
-    actualizarAlertasPredictivasPanel(lista);
-
-    // Sincronizar en segundo plano con el backend de Vercel
-    if (typeof fetch !== "undefined") {
-        fetch('/api/historial')
-            .then(res => res.ok ? res.json() : null)
-            .then(data => {
-                if (data && data.historial && data.historial.length > 0) {
-                    localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(data.historial));
-                    renderizarFilasHistorialDOM(data.historial);
-                    actualizarAlertasPredictivasPanel(data.historial);
-                }
-            })
-            .catch(() => {});
+    // 2. Cargar directamente desde Cloud Firestore (base de datos real de Google Firebase)
+    if (db) {
+        db.collection("historial_fallas")
+          .get()
+          .then(snapshot => {
+              if (snapshot && !snapshot.empty) {
+                  const cloudItems = [];
+                  snapshot.forEach(doc => {
+                      cloudItems.push(doc.data());
+                  });
+                  // Ordenar por timestamp descendente (lo más nuevo arriba)
+                  cloudItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                  if (cloudItems.length > 0) {
+                      localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(cloudItems));
+                      renderizarFilasHistorialDOM(cloudItems);
+                      actualizarAlertasPredictivasPanel(cloudItems);
+                      console.log("[Firestore] Historial cargado exitosamente desde la nube:", cloudItems.length, "registros");
+                  }
+              }
+          })
+          .catch(err => {
+              console.warn("[Firestore] Aviso de consulta:", err.message);
+          });
     }
 }
 
@@ -665,6 +648,14 @@ function limpiarHistorialFallas() {
             tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748B; padding: 24px;">Historial vacío. Inicia y detén una medición para registrar datos.</td></tr>';
         }
         actualizarAlertasPredictivasPanel([]);
+        if (db) {
+            db.collection("historial_fallas").get().then(snapshot => {
+                snapshot.forEach(doc => doc.ref.delete());
+            }).catch(e => console.warn("[Firestore] Error al vaciar nube:", e));
+        }
+        if (typeof fetch !== "undefined") {
+            fetch('/api/historial', { method: 'DELETE' }).catch(() => {});
+        }
     }
 }
 

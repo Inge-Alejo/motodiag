@@ -1,39 +1,7 @@
-// Almacén en memoria persistente en el contenedor serverless de Vercel
-let historialGlobalEnMemoria = [
-    {
-        id: "reg_init_1",
-        fecha: "26/10/2026, 08:30 PM",
-        modulo: "Configuración & Moto",
-        descripcion: "Actualización técnica de la motocicleta: Yamaha YCZ 110cc registrada",
-        severidad: "Normal",
-        badgeClass: "bg-success",
-        estado: "Al día",
-        timestamp: Date.now() - 3600000
-    },
-    {
-        id: "reg_init_2",
-        fecha: "26/10/2026, 07:15 PM",
-        modulo: "Telemetría en Vivo",
-        descripcion: "Medición en régimen parejo y continuo: Temp Media 89.4°C | Vibración Media 0.94g",
-        severidad: "Normal",
-        badgeClass: "bg-success",
-        estado: "Completado",
-        timestamp: Date.now() - 7200000
-    },
-    {
-        id: "reg_init_3",
-        fecha: "25/10/2026, 04:10 PM",
-        modulo: "Dispositivo ESP32",
-        descripcion: "Sonda DS18B20 culata 88.7°C | IMU MPU6050 0.94g sincronizado por WiFi iPhone Andres",
-        severidad: "Normal",
-        badgeClass: "bg-success",
-        estado: "Completado",
-        timestamp: Date.now() - 86400000
-    }
-];
+// Endpoint serverless en Vercel para respaldo de historial
+let historialGlobalEnMemoria = [];
 
 export default async function handler(req, res) {
-    // CORS
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST,DELETE');
@@ -70,15 +38,14 @@ export default async function handler(req, res) {
             };
 
             historialGlobalEnMemoria.unshift(nuevoRegistro);
-            if (historialGlobalEnMemoria.length > 50) {
+            if (historialGlobalEnMemoria.length > 100) {
                 historialGlobalEnMemoria.pop();
             }
 
             return res.status(200).json({
                 ok: true,
-                mensaje: "Registro guardado en base de datos de Vercel con éxito",
-                registro: nuevoRegistro,
-                historial: historialGlobalEnMemoria
+                mensaje: "Registro guardado en respaldo de Vercel",
+                registro: nuevoRegistro
             });
         } catch (e) {
             return res.status(500).json({ error: e.message });
