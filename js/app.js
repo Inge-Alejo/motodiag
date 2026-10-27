@@ -101,7 +101,8 @@ const defaultFirebaseConfig = {
     projectId: "motodiag-e6676",
     storageBucket: "motodiag-e6676.firebasestorage.app",
     messagingSenderId: "493156491098",
-    appId: "1:493156491098:web:113961dbdfab5e24f49d63"
+    appId: "1:493156491098:web:113961dbdfab5e24f49d63",
+    databaseURL: "https://motodiag-e6676-default-rtdb.firebaseio.com"
 };
 
 let firebaseInicializado = false;
@@ -120,8 +121,15 @@ function inicializarFirebase() {
         }
         auth = firebase.auth();
         db = firebase.firestore();
+        if (typeof firebase.database === "function") {
+            try {
+                rtdb = firebase.database();
+            } catch (e) {
+                console.warn("[RTDB] No se pudo inicializar database:", e);
+            }
+        }
         firebaseInicializado = true;
-        console.log("Firebase conectado exitosamente con Cloud Firestore:", defaultFirebaseConfig.projectId);
+        console.log("Firebase conectado exitosamente con Cloud Firestore & RTDB:", defaultFirebaseConfig.projectId);
 
         auth.onAuthStateChanged(user => {
             if (user) {
@@ -751,7 +759,23 @@ let ultimaMarcaTiempoESP32 = 0;
 function conectarTelemetriaESP32() {
     inicializarGraficoDispositivo();
 
-    // Polling al endpoint serverless /api/esp32 de Vercel para recibir telemetría enviada por el ESP32 real
+    // 1. Conexión en tiempo real a Firebase Realtime Database (/dispositivo/live)
+    if (rtdb && !rtdbListenerActivo) {
+        try {
+            rtdbListenerActivo = true;
+            rtdb.ref("dispositivo/live").on("value", snapshot => {
+                const data = snapshot.val();
+                if (data) {
+                    actualizarVistaESP32(data);
+                }
+            });
+            console.log("[RTDB] Listener conectado a /dispositivo/live");
+        } catch (e) {
+            console.warn("[RTDB] Error en listener:", e);
+        }
+    }
+
+    // 2. Polling al endpoint serverless /api/esp32 de Vercel como respaldo
     if (pollingESP32Interval) clearInterval(pollingESP32Interval);
 
     const consultarEndpointESP32 = async () => {
@@ -762,7 +786,7 @@ function conectarTelemetriaESP32() {
                 if (data.hayDatosReales && data.ultimaTrama && data.timestamp !== ultimaMarcaTiempoESP32) {
                     ultimaMarcaTiempoESP32 = data.timestamp;
                     actualizarVistaESP32(data.ultimaTrama);
-                } else if (!data.hayDatosReales && !esp32Simulando) {
+                } else if (!data.hayDatosReales && !rtdbListenerActivo) {
                     const badgeConn = document.getElementById("esp32-status-badge");
                     if (badgeConn) {
                         badgeConn.className = "badge-offline";
@@ -884,6 +908,33 @@ function actualizarVistaESP32(data) {
         chartDispositivoReal.data.datasets[0].data.push(parseFloat(tempVal.toFixed(1)));
         chartDispositivoReal.data.datasets[1].data.push(parseFloat(vibTotal.toFixed(2)));
         chartDispositivoReal.update();
+    }
+
+    // Reflejar también en el Panel General (Dashboard principal)
+    const generalTemp = document.getElementById("val-temp-media");
+    const generalVib = document.getElementById("val-vibracion");
+    const generalEstado = document.getElementById("val-estado-global");
+    if (generalTemp) generalTemp.innerText = `${tempVal.toFixed(1)} °C`;
+    if (generalVib) generalVib.innerText = `${vibTotal.toFixed(2)} g`;
+    if (generalEstado) {
+        if (tempVal > 105.0) {
+            generalEstado.innerText = "Alerta Térmica Leve";
+            generalEstado.style.color = "#F59E0B";
+        } else {
+            generalEstado.innerText = "Operación Normal";
+            generalEstado.style.color = "#10B981";
+        }
+    }
+    if (chartGeneral) {
+        if (chartGeneral.data.labels.length > 20) {
+            chartGeneral.data.labels.shift();
+            if (chartGeneral.data.datasets[0]) chartGeneral.data.datasets[0].data.shift();
+            if (chartGeneral.data.datasets[1]) chartGeneral.data.datasets[1].data.shift();
+        }
+        chartGeneral.data.labels.push(hora);
+        if (chartGeneral.data.datasets[0]) chartGeneral.data.datasets[0].data.push(parseFloat(tempVal.toFixed(1)));
+        if (chartGeneral.data.datasets[1]) chartGeneral.data.datasets[1].data.push(parseFloat(vibTotal.toFixed(2)));
+        chartGeneral.update();
     }
 
     // Agregar trama al terminal
