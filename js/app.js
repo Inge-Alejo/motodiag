@@ -85,8 +85,7 @@ const defaultFirebaseConfig = {
     projectId: "motodiag-e6676",
     storageBucket: "motodiag-e6676.firebasestorage.app",
     messagingSenderId: "493156491098",
-    appId: "1:493156491098:web:113961dbdfab5e24f49d63",
-    databaseURL: "https://motodiag-e6676-default-rtdb.firebaseio.com"
+    appId: "1:493156491098:web:113961dbdfab5e24f49d63"
 };
 
 let firebaseInicializado = false;
@@ -105,10 +104,8 @@ function inicializarFirebase() {
         }
         auth = firebase.auth();
         db = firebase.firestore();
-        rtdb = firebase.database();
-        sincronizarHistorialFirebaseTiempoReal();
         firebaseInicializado = true;
-        console.log("Firebase conectado exitosamente con proyecto:", defaultFirebaseConfig.projectId);
+        console.log("Firebase conectado exitosamente con Cloud Firestore:", defaultFirebaseConfig.projectId);
 
         auth.onAuthStateChanged(user => {
             if (user) {
@@ -116,8 +113,40 @@ function inicializarFirebase() {
                 cargarPerfilUsuario(user.displayName || user.email.split("@")[0]);
             }
         });
+
+        // Listener en tiempo real de Cloud Firestore para sincronización instantánea
+        conectarFirestoreTiempoReal();
+
     } catch (err) {
         console.warn("Aviso al inicializar Firebase:", err.message);
+    }
+}
+
+function conectarFirestoreTiempoReal() {
+    if (!db || window.firestoreListenerActivo) return;
+    try {
+        window.firestoreListenerActivo = true;
+        db.collection("historial_fallas")
+          .limit(30)
+          .onSnapshot(snapshot => {
+              if (snapshot && !snapshot.empty) {
+                  const cloudItems = [];
+                  snapshot.forEach(doc => {
+                      cloudItems.push(doc.data());
+                  });
+                  // Ordenar por timestamp descendente
+                  cloudItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                  if (cloudItems.length > 0) {
+                      localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(cloudItems));
+                      renderizarFilasHistorialDOM(cloudItems);
+                      actualizarAlertasPredictivasPanel(cloudItems);
+                  }
+              }
+          }, err => {
+              console.warn("Aviso permisos Firestore (usa modo de prueba en Firebase Console si deseas sincronizar directo con Firestore):", err.message);
+          });
+    } catch(e) {
+        console.warn("Listener Firestore:", e.message);
     }
 }
 
@@ -465,6 +494,7 @@ const registrosInicialesFallas = [
     }
 ];
 
+
 function cargarHistorialFallas() {
     const tbody = document.getElementById("historial-tabla-body");
     if (!tbody) return;
@@ -482,29 +512,20 @@ function cargarHistorialFallas() {
 
     renderizarFilasHistorialDOM(lista);
     actualizarAlertasPredictivasPanel(lista);
-}
 
-function renderizarFilasHistorialDOM(lista) {
-    const tbody = document.getElementById("historial-tabla-body");
-    if (!tbody) return;
-
-    if (!lista || lista.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748B; padding: 24px;">Historial vacío. Realiza una medición en Telemetría o ESP32 para registrar datos.</td></tr>';
-        return;
+    // Sincronizar en segundo plano con el backend de Vercel
+    if (typeof fetch !== "undefined") {
+        fetch('/api/historial')
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+                if (data && data.historial && data.historial.length > 0) {
+                    localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(data.historial));
+                    renderizarFilasHistorialDOM(data.historial);
+                    actualizarAlertasPredictivasPanel(data.historial);
+                }
+            })
+            .catch(() => {});
     }
-
-    tbody.innerHTML = "";
-    lista.forEach(reg => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-            <td><strong>${reg.fecha}</strong></td>
-            <td>${reg.modulo}</td>
-            <td>${reg.descripcion}</td>
-            <td><span class="badge ${reg.badgeClass}">${reg.severidad}</span></td>
-            <td><span style="color:#10B981; font-weight:600;">${reg.estado}</span></td>
-        `;
-        tbody.appendChild(tr);
-    });
 }
 
 async function agregarEntradaHistorial(modulo, descripcion, severidad, estado) {
@@ -527,9 +548,9 @@ async function agregarEntradaHistorial(modulo, descripcion, severidad, estado) {
     const nuevoItem = {
         id: "reg_" + Date.now(),
         fecha: fechaStr,
-        modulo: modulo,
+        modulo: modulo || "Configuración & Moto",
         descripcion: descripcion,
-        severidad: severidad,
+        severidad: severidad || "Normal",
         badgeClass: badgeClass,
         estado: estado || "Completado",
         timestamp: Date.now()
@@ -538,54 +559,36 @@ async function agregarEntradaHistorial(modulo, descripcion, severidad, estado) {
     lista.unshift(nuevoItem);
     if (lista.length > 60) lista.pop();
 
-    // 1. GUARDADO INMEDIATO EN LOCALSTORAGE (DISPONIBLE SIN CONEXIÓN)
+    // 1. NIVEL 1: PERSISTENCIA LOCAL INMEDIATA (0 ms, OFFLINE FIRST)
     localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(lista));
     renderizarFilasHistorialDOM(lista);
     actualizarAlertasPredictivasPanel(lista);
 
-    // 2. MOSTRAR CONFIRMACIÓN VISUAL AL USUARIO (TOAST)
+    // 2. FEEDBACK VISUAL INMEDIATO AL USUARIO
     mostrarNotificacionGuardado(
-        "✅ " + modulo + " Guardado",
+        "✅ " + (modulo || "Registro") + " Guardado",
         descripcion
     );
 
-    // 3. PERSISTENCIA EN CLOUD FIRESTORE (SIN BLOQUEAR)
+    // 3. NIVEL 2: PERSISTENCIA EN CLOUD BACKEND DE VERCEL (/api/historial)
+    if (typeof fetch !== "undefined") {
+        fetch('/api/historial', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(nuevoItem)
+        }).then(r => r.json())
+          .then(res => console.log("Guardado en Vercel Database con éxito:", res.ok))
+          .catch(e => console.warn("Vercel DB sync:", e.message));
+    }
+
+    // 4. NIVEL 3: PERSISTENCIA EN CLOUD FIRESTORE DE GOOGLE FIREBASE
     if (db) {
         db.collection("historial_fallas").add(nuevoItem)
             .then(docRef => console.log("Guardado en Firestore con ID:", docRef.id))
             .catch(err => console.warn("Aviso Firestore (requiere reglas abiertas en consola):", err.message));
     }
-
-    // 4. PERSISTENCIA EN FIREBASE REALTIME DATABASE (SI ESTÁ ACTIVA)
-    if (rtdb) {
-        rtdb.ref("historial_fallas").push(nuevoItem)
-            .then(() => console.log("Sincronizado con Realtime Database."))
-            .catch(err => console.warn("Aviso RTDB:", err.message));
-    }
 }
 
-function sincronizarHistorialFirebaseTiempoReal() {
-    if (!rtdb || window.historialRtdbListenerActivo) return;
-    try {
-        window.historialRtdbListenerActivo = true;
-        rtdb.ref("historial_fallas").limitToLast(25).on("value", snapshot => {
-            if (snapshot.exists()) {
-                const cloudItems = [];
-                snapshot.forEach(child => {
-                    cloudItems.unshift(child.val());
-                });
-                if (cloudItems.length > 0) {
-                    localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(cloudItems));
-                    renderizarFilasHistorialDOM(cloudItems);
-                    actualizarAlertasPredictivasPanel(cloudItems);
-                }
-            }
-        });
-        console.log("Sincronización en tiempo real de Historial activada vía RTDB.");
-    } catch (e) {
-        console.warn("Error iniciando listener de historial RTDB:", e.message);
-    }
-}
 
 function limpiarHistorialFallas() {
     if (confirm("¿Deseas vaciar el historial de anomalías y mediciones?")) {
