@@ -519,6 +519,37 @@ const registrosInicialesFallas = [
 ];
 
 
+// Renderizador del Historial en el DOM
+function renderizarFilasHistorialDOM(lista) {
+    const tbody = document.getElementById("historial-tabla-body");
+    if (!tbody) return;
+
+    if (!Array.isArray(lista) || lista.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748B; padding: 24px;">Aún no hay registros. Realiza una medición de telemetría para generar el historial.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = "";
+    lista.forEach(item => {
+        const tr = document.createElement("tr");
+        const fecha = item.fecha || new Date().toLocaleString();
+        const modulo = item.modulo || "Sistema";
+        const desc = item.descripcion || "";
+        const sev = item.severidad || "Normal";
+        const badgeClass = item.badgeClass || (sev === "Advertencia" || sev === "Media" || sev === "Preventivo" ? "bg-warning" : (sev === "Peligro" || sev === "Crítico" ? "bg-danger" : "bg-success"));
+        const estado = item.estado || "Completado";
+
+        tr.innerHTML = `
+            <td style="font-weight: 600; color: #0F172A;">${fecha}</td>
+            <td><span class="badge" style="background: #E2E8F0; color: #1E293B; font-weight: 600;">${modulo}</span></td>
+            <td>${desc}</td>
+            <td><span class="badge ${badgeClass}">${sev}</span></td>
+            <td><span style="color: #10B981; font-weight: 600;">${estado}</span></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
 function cargarHistorialFallas() {
     const tbody = document.getElementById("historial-tabla-body");
     if (!tbody) return;
@@ -768,8 +799,8 @@ function inicializarGraficoDispositivo() {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                y: { type: 'linear', position: 'left', min: 40, max: 130, title: { display: true, text: '°C' } },
-                y1: { type: 'linear', position: 'right', min: 0, max: 3, grid: { drawOnChartArea: false }, title: { display: true, text: 'g' } }
+                y: { type: 'linear', position: 'left', min: 75, max: 105, title: { display: true, text: '°C' } },
+                y1: { type: 'linear', position: 'right', min: 0.5, max: 2.0, grid: { drawOnChartArea: false }, title: { display: true, text: 'g' } }
             }
         }
     });
@@ -894,52 +925,59 @@ function iniciarMedicionSimulada() {
 
     const estadoLbl = document.getElementById("estado-medicion-lbl");
     if (estadoLbl) {
-        estadoLbl.innerHTML = '<span style="color:#10B981; font-weight:600;">[Activo] Medición en tiempo real iniciada (82°C a 98°C).</span>';
+        estadoLbl.innerHTML = '<span style="color:#10B981; font-weight:600;">[Activo] Medición en vivo activa (Dinámica entre 82°C y 98°C).</span>';
     }
 
     lecturasTemporalesTemp = [];
     lecturasTemporalesVib = [];
     estadoFisicaMotor.tiempoTicks = 0;
-    
-    // Inicializar temperatura en un valor operativo intermedio si no está en rango
-    if (!estadoFisicaMotor.tempCulata || estadoFisicaMotor.tempCulata < 82 || estadoFisicaMotor.tempCulata > 98) {
-        estadoFisicaMotor.tempCulata = 88.0;
+
+    // Inicializar punto de partida intermedio realista
+    if (!estadoFisicaMotor.tempCulata || estadoFisicaMotor.tempCulata < 84 || estadoFisicaMotor.tempCulata > 96) {
+        estadoFisicaMotor.tempCulata = 89.0;
     }
     if (!estadoFisicaMotor.vibracionG || estadoFisicaMotor.vibracionG < 0.85 || estadoFisicaMotor.vibracionG > 1.35) {
-        estadoFisicaMotor.vibracionG = 0.95;
+        estadoFisicaMotor.vibracionG = 1.05;
     }
 
     intervaloSimulacion = setInterval(() => {
         estadoFisicaMotor.tiempoTicks++;
-        
-        // REGLA SOLICITADA:
-        // Variación aleatoria de ~1 °C por lectura (+ o -).
-        // Rango estricto: mínimo 82 °C, máximo 98 °C.
-        // Nunca bajar más de 5 °C en una sola lectura.
-        const direccion = (Math.random() - 0.48) >= 0 ? 1 : -1;
-        // Variación aleatoria de entre 0.6 °C y 1.4 °C (alrededor de 1 grado)
-        let deltaTemp = (Math.random() * 0.8 + 0.6) * direccion;
-        
-        // Restricción: No bajar más de 5 grados en una lectura
-        if (deltaTemp < -5.0) deltaTemp = -5.0;
+        const t = estadoFisicaMotor.tiempoTicks;
 
-        let tempCalculada = estadoFisicaMotor.tempCulata + deltaTemp;
-        
-        // Delimitar dentro del rango 82°C - 98°C
+        // FÍSICA DISPERSA Y DINÁMICA (REGLA SOLICITADA):
+        // 1. Variación aleatoria de ~1°C a 2°C arriba y abajo en cada lectura (ondas no lineales)
+        // 2. Fuerza restauradora suave hacia 89.5°C para evitar que se quede pegado arriba o abajo
+        const tempActual = estadoFisicaMotor.tempCulata;
+        const tendenciaMedia = (89.5 - tempActual) * 0.12;
+        const ruidoAleatorio = (Math.random() * 4.0 - 2.0); // Variación entre -1.4°C y +1.4°C
+        const pulsoDinamico = Math.sin(t * 0.3) * 1.5;       // Ondulaciones térmicas reales
+
+        let deltaTemp = tendenciaMedia + ruidoAleatorio + pulsoDinamico;
+
+        // RESTRICCIÓN ESTRICTA: No bajar más de 5°C en una sola lectura
+        if (deltaTemp < -4.5) deltaTemp = -4.5;
+        if (deltaTemp > 4.5) deltaTemp = 4.5;
+
+        let tempCalculada = tempActual + deltaTemp;
+
+        // DELIMITAR ESTRICTAMENTE ENTRE 82.0°C Y 98.0°C
         if (tempCalculada < 82.0) {
-            tempCalculada = 82.0 + Math.random() * 0.6;
+            tempCalculada = 82.0 + Math.random() * 1.5;
         } else if (tempCalculada > 98.0) {
-            tempCalculada = 98.0 - Math.random() * 0.6;
+            tempCalculada = 98.0 - Math.random() * 1.5;
         }
 
         estadoFisicaMotor.tempCulata = parseFloat(tempCalculada.toFixed(1));
         const tempFinal = estadoFisicaMotor.tempCulata;
 
-        // Vibración armónica con variación proporcional (0.85g a 1.35g)
-        let deltaVib = (Math.random() * 0.10 - 0.05);
-        let vibCalculada = estadoFisicaMotor.vibracionG + deltaVib;
-        if (vibCalculada < 0.85) vibCalculada = 0.85 + Math.random() * 0.04;
-        if (vibCalculada > 1.35) vibCalculada = 1.35 - Math.random() * 0.04;
+        // VIBRACIÓN DISPERSA Y PROPORCIONAL (0.85g a 1.45g)
+        const vibActual = estadoFisicaMotor.vibracionG;
+        const tendenciaVib = (1.10 - vibActual) * 0.15;
+        const ruidoVib = (Math.random() * 0.36 - 0.18);
+        let vibCalculada = vibActual + tendenciaVib + ruidoVib;
+        if (vibCalculada < 0.85) vibCalculada = 0.85 + Math.random() * 0.08;
+        if (vibCalculada > 1.45) vibCalculada = 1.45 - Math.random() * 0.08;
+
         estadoFisicaMotor.vibracionG = parseFloat(vibCalculada.toFixed(2));
         const vibFinal = estadoFisicaMotor.vibracionG;
 
@@ -948,54 +986,63 @@ function iniciarMedicionSimulada() {
         lecturasTemporalesTemp.push(tempFinal);
         lecturasTemporalesVib.push(vibFinal);
 
-        // Actualizar valores en Telemetría en Vivo
+        // Actualizar valores numéricos en Telemetría en Vivo
         const teleTemp = document.getElementById("val-temp-telemetria");
         const teleVib = document.getElementById("val-vib-telemetria");
         if (teleTemp) teleTemp.innerText = `${tempFinal} °C`;
         if (teleVib) teleVib.innerText = `${vibFinal} g`;
 
-        // Actualizar valores en Panel General
+        // Actualizar valores numéricos en Panel General
         const generalTemp = document.getElementById("val-temp-media");
         const generalVib = document.getElementById("val-vibracion");
         const generalEstado = document.getElementById("val-estado-global");
         if (generalTemp) generalTemp.innerText = `${tempFinal} °C`;
         if (generalVib) generalVib.innerText = `${vibFinal} g`;
         if (generalEstado) {
-            generalEstado.innerText = "Operación Normal";
-            generalEstado.style.color = "#10B981";
+            if (tempFinal > 95.0) {
+                generalEstado.innerText = "Alerta Térmica Leve";
+                generalEstado.style.color = "#F59E0B";
+            } else {
+                generalEstado.innerText = "Operación Normal";
+                generalEstado.style.color = "#10B981";
+            }
         }
 
-        // Gráficos continuos
+        // GRÁFICO GENERAL: Ambos datasets (Temperatura y Vibración)
         if (chartGeneral) {
-            if (chartGeneral.data.labels.length > 15) {
+            if (chartGeneral.data.labels.length > 20) {
                 chartGeneral.data.labels.shift();
-                chartGeneral.data.datasets[0].data.shift();
+                if (chartGeneral.data.datasets[0]) chartGeneral.data.datasets[0].data.shift();
+                if (chartGeneral.data.datasets[1]) chartGeneral.data.datasets[1].data.shift();
             }
             chartGeneral.data.labels.push(hora);
-            chartGeneral.data.datasets[0].data.push(tempFinal);
+            if (chartGeneral.data.datasets[0]) chartGeneral.data.datasets[0].data.push(tempFinal);
+            if (chartGeneral.data.datasets[1]) chartGeneral.data.datasets[1].data.push(vibFinal);
             chartGeneral.update();
         }
 
+        // GRÁFICO TELEMETRÍA: TEMPERATURA
         if (chartTemp) {
-            if (chartTemp.data.labels.length > 15) {
+            if (chartTemp.data.labels.length > 20) {
                 chartTemp.data.labels.shift();
-                chartTemp.data.datasets[0].data.shift();
+                if (chartTemp.data.datasets[0]) chartTemp.data.datasets[0].data.shift();
             }
             chartTemp.data.labels.push(hora);
-            chartTemp.data.datasets[0].data.push(tempFinal);
+            if (chartTemp.data.datasets[0]) chartTemp.data.datasets[0].data.push(tempFinal);
             chartTemp.update();
         }
 
+        // GRÁFICO TELEMETRÍA: MPU6050
         if (chartMpu) {
-            if (chartMpu.data.labels.length > 15) {
+            if (chartMpu.data.labels.length > 20) {
                 chartMpu.data.labels.shift();
-                chartMpu.data.datasets[0].data.shift();
+                if (chartMpu.data.datasets[0]) chartMpu.data.datasets[0].data.shift();
             }
             chartMpu.data.labels.push(hora);
-            chartMpu.data.datasets[0].data.push(vibFinal);
+            if (chartMpu.data.datasets[0]) chartMpu.data.datasets[0].data.push(vibFinal);
             chartMpu.update();
         }
-    }, 1200);
+    }, 1100);
 }
 
 function detenerMedicionSimulada() {
@@ -1015,8 +1062,8 @@ function detenerMedicionSimulada() {
         nombreModulo = "Telemetría en Vivo";
     }
 
-    let promTemp = (88.0).toFixed(1);
-    let promVib = (0.95).toFixed(2);
+    let promTemp = (89.0).toFixed(1);
+    let promVib = (1.05).toFixed(2);
 
     if (lecturasTemporalesTemp && lecturasTemporalesTemp.length > 0) {
         promTemp = (lecturasTemporalesTemp.reduce((a, b) => a + b, 0) / lecturasTemporalesTemp.length).toFixed(1);
@@ -1043,7 +1090,7 @@ function detenerMedicionSimulada() {
         descripcion = `Nivel de vibración promedio ${promVib}g elevado`;
     }
 
-    // Guardar en el historial (Firebase Firestore + Base de datos Vercel + Local)
+    // Guardar en el historial (Local + Base de datos Vercel + Firestore)
     agregarEntradaHistorial(nombreModulo, descripcion, severidad, "Completado");
 }
 
