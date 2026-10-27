@@ -2,23 +2,39 @@
 function inicializarValoresPorDefecto() {
     const teleTemp = document.getElementById("val-temp-telemetria");
     const teleVib = document.getElementById("val-vib-telemetria");
-    if (teleTemp) teleTemp.innerText = "89.4 °C";
-    if (teleVib) teleVib.innerText = "0.94 g";
+    if (teleTemp) teleTemp.innerText = "89.2 °C";
+    if (teleVib) teleVib.innerText = "0.95 g";
 
     const generalTemp = document.getElementById("val-temp-media");
     const generalVib = document.getElementById("val-vibracion");
     const generalEstado = document.getElementById("val-estado-global");
-    if (generalTemp) generalTemp.innerText = "89.4 °C";
-    if (generalVib) generalVib.innerText = "0.94 g";
+    if (generalTemp) generalTemp.innerText = "89.2 °C";
+    if (generalVib) generalVib.innerText = "0.95 g";
     if (generalEstado) {
-        generalEstado.innerText = "Operación Normal (89.4°C Parejo)";
+        generalEstado.innerText = "Operación Normal";
         generalEstado.style.color = "#10B981";
     }
 
+    // El ESP32 es para hardware real: esperar lecturas de la sonda DS18B20 y el MPU6050
     const espTemp = document.getElementById("val-esp32-temp");
     const espVib = document.getElementById("val-esp32-vibe-mag");
-    if (espTemp && espTemp.innerText.includes("--")) espTemp.innerText = "89.4 °C";
-    if (espVib && espVib.innerText.includes("--")) espVib.innerText = "0.94 G";
+    const espTempState = document.getElementById("val-esp32-temp-state");
+    const espVibState = document.getElementById("val-esp32-vibe-state");
+    const badgeConn = document.getElementById("esp32-status-badge");
+    if (espTemp) espTemp.innerText = "-- °C";
+    if (espVib) espVib.innerText = "-- G";
+    if (espTempState) {
+        espTempState.innerText = "Esperando hardware real (DS18B20)...";
+        espTempState.style.color = "#64748B";
+    }
+    if (espVibState) {
+        espVibState.innerText = "Esperando sensor MPU6050...";
+        espVibState.style.color = "#64748B";
+    }
+    if (badgeConn) {
+        badgeConn.className = "badge-offline";
+        badgeConn.innerText = "En espera de hardware";
+    }
 }
 
 
@@ -212,6 +228,24 @@ async function iniciarSesion() {
         return;
     }
 
+    // 1. Verificación local / admin directa (evita falsas alertas de Firebase para admin/1234 y cuentas locales)
+    const usuariosRegistrados = JSON.parse(localStorage.getItem("motoDiag_registered_users")) || {};
+    if (usuarioOCorreo.toLowerCase() === "admin" && contrasena === "1234") {
+        cargarPerfilUsuario("admin");
+        return;
+    }
+    if (usuariosRegistrados[usuarioOCorreo] && usuariosRegistrados[usuarioOCorreo].password === contrasena) {
+        cargarPerfilUsuario(usuarioOCorreo);
+        return;
+    }
+    for (let u in usuariosRegistrados) {
+        if (usuariosRegistrados[u].email && usuariosRegistrados[u].email.toLowerCase() === usuarioOCorreo.toLowerCase() && usuariosRegistrados[u].password === contrasena) {
+            cargarPerfilUsuario(u);
+            return;
+        }
+    }
+
+    // 2. Si no es credencial local, verificar en Firebase Cloud Auth
     if (firebaseInicializado && auth) {
         try {
             let emailFinal = usuarioOCorreo;
@@ -225,21 +259,11 @@ async function iniciarSesion() {
             return;
         } catch (error) {
             console.warn("Fallo en login de Firebase:", error.code);
-            if (error.code === "auth/user-not-found" || error.code === "auth/wrong-password" || error.code === "auth/invalid-credential") {
-                alert("Usuario o contraseña incorrectos.");
-                return;
-            }
         }
     }
 
-    const usuariosRegistrados = JSON.parse(localStorage.getItem("motoDiag_registered_users")) || {};
-    if (usuariosRegistrados[usuarioOCorreo] && usuariosRegistrados[usuarioOCorreo].password === contrasena) {
-        cargarPerfilUsuario(usuarioOCorreo);
-    } else if (usuarioOCorreo === "admin" && contrasena === "1234") {
-        cargarPerfilUsuario("admin");
-    } else {
-        alert("Credenciales incorrectas. Verifica tu usuario y contraseña.");
-    }
+    // Si no coincidió ni en local ni en Firebase
+    alert("Credenciales incorrectas. Verifica tu usuario y contraseña.");
 }
 
 async function registrarUsuario() {
@@ -460,7 +484,7 @@ function guardarDatosMoto() {
     agregarEntradaHistorial("Configuración & Moto", descripcion, "Normal", "Al día");
 
     mostrarNotificacionGuardado(
-        "✅ Configuración & Moto Guardada",
+        "[Guardado] Configuración & Moto Guardada",
         descripcion + " registrado en el historial y base de datos."
     );
 
@@ -566,7 +590,7 @@ async function agregarEntradaHistorial(modulo, descripcion, severidad, estado) {
 
     // 2. FEEDBACK VISUAL INMEDIATO AL USUARIO
     mostrarNotificacionGuardado(
-        "✅ " + (modulo || "Registro") + " Guardado",
+        "[Guardado] " + (modulo || "Registro") + " Guardado",
         descripcion
     );
 
@@ -669,22 +693,38 @@ let esp32LecturasVib = [];
 let esp32PacketsCount = 0;
 let esp32TickCounter = 0;
 
+let pollingESP32Interval = null;
+let ultimaMarcaTiempoESP32 = 0;
+
 function conectarTelemetriaESP32() {
     inicializarGraficoDispositivo();
-    if (!rtdb || rtdbListenerActivo) return;
 
-    try {
-        const liveRef = rtdb.ref("dispositivo/live");
-        liveRef.on("value", snapshot => {
-            if (snapshot.exists()) {
-                actualizarVistaESP32(snapshot.val());
+    // Polling al endpoint serverless /api/esp32 de Vercel para recibir telemetría enviada por el ESP32 real
+    if (pollingESP32Interval) clearInterval(pollingESP32Interval);
+
+    const consultarEndpointESP32 = async () => {
+        try {
+            const resp = await fetch('/api/esp32');
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.hayDatosReales && data.ultimaTrama && data.timestamp !== ultimaMarcaTiempoESP32) {
+                    ultimaMarcaTiempoESP32 = data.timestamp;
+                    actualizarVistaESP32(data.ultimaTrama);
+                } else if (!data.hayDatosReales && !esp32Simulando) {
+                    const badgeConn = document.getElementById("esp32-status-badge");
+                    if (badgeConn) {
+                        badgeConn.className = "badge-offline";
+                        badgeConn.innerText = "En espera de hardware";
+                    }
+                }
             }
-        });
-        rtdbListenerActivo = true;
-        console.log("Conectado a Firebase Realtime Database para telemetría ESP32.");
-    } catch (err) {
-        console.warn("Realtime Database listener:", err.message);
-    }
+        } catch (e) {
+            // Ignorar en entorno de desarrollo local sin serverless
+        }
+    };
+
+    consultarEndpointESP32();
+    pollingESP32Interval = setInterval(consultarEndpointESP32, 2000);
 }
 
 function inicializarGraficoDispositivo() {
@@ -736,7 +776,7 @@ function actualizarVistaESP32(data) {
     const elemTempState = document.getElementById("val-esp32-temp-state");
     if (elemTemp) elemTemp.innerText = `${tempVal.toFixed(1)} °C`;
     if (elemTempState) {
-        elemTempState.innerText = tempVal > 105 ? "⚠️ Temperatura elevada" : "✓ Rango óptimo culata (Yamaha YCZ 110)";
+        elemTempState.innerText = tempVal > 105 ? "[Alerta] Temperatura elevada" : "[Normal] Rango óptimo culata (Yamaha YCZ 110)";
         elemTempState.style.color = tempVal > 105 ? "#F59E0B" : "#10B981";
     }
 
@@ -750,7 +790,7 @@ function actualizarVistaESP32(data) {
     const elemVibState = document.getElementById("val-esp32-vibe-state");
     if (elemVib) elemVib.innerText = `${vibTotal.toFixed(2)} G`;
     if (elemVibState) {
-        elemVibState.innerText = vibTotal > 1.8 ? "⚠️ Vibración elevada" : "✓ Nivel de vibración parejo y balanceado";
+        elemVibState.innerText = vibTotal > 1.8 ? "[Alerta] Vibración elevada" : "[Normal] Nivel de vibración parejo y balanceado";
         elemVibState.style.color = vibTotal > 1.8 ? "#F59E0B" : "#10B981";
     }
 
@@ -830,7 +870,7 @@ function toggleSimularESP32() {
         esp32Simulando = false;
 
         if (btn) {
-            btn.innerHTML = "⚡ Simular Envío ESP32";
+            btn.innerHTML = " Simular Envío ESP32";
             btn.style.background = "#6366F1";
         }
 
@@ -877,7 +917,7 @@ function toggleSimularESP32() {
         esp32TickCounter = 0;
 
         if (btn) {
-            btn.innerHTML = "⏹️ Detener Envío ESP32";
+            btn.innerHTML = " Detener Envío ESP32";
             btn.style.background = "#EF4444";
         }
 
@@ -934,7 +974,7 @@ function iniciarMedicionSimulada() {
 
     const estadoLbl = document.getElementById("estado-medicion-lbl");
     if (estadoLbl) {
-        estadoLbl.innerHTML = '<span style="color:#10B981; font-weight:600;">🟢 Estado: Medición activa en tiempo real. Curvas parejas y continuas.</span>';
+        estadoLbl.innerHTML = '<span style="color:#10B981; font-weight:600;">[Activo] Medición en tiempo real iniciada. Curvas continuas y dinámicas.</span>';
     }
 
     lecturasTemporalesTemp = [];
@@ -945,50 +985,44 @@ function iniciarMedicionSimulada() {
         estadoFisicaMotor.tiempoTicks++;
         const t = estadoFisicaMotor.tiempoTicks;
 
-        // FÍSICA ESTABLE Y REAL (YAMAHA YCZ 110cc 4T AIRE):
-        // Temperatura culata promedio real de fábrica: 89.4°C
-        // Oscilación térmica máxima de +-0.25°C a lo largo del tiempo (89.2°C a 89.6°C)
-        const microVariacion = Math.sin(t * 0.08) * 0.22;
-        estadoFisicaMotor.tempCulata = 89.4 + microVariacion;
+        // FÍSICA DINÁMICA REALISTA (YAMAHA YCZ 110cc 4T AIRE):
+        // Temperatura promedio en marcha continua: ~89.5°C con suave variación térmica gradual (+-1.2°C)
+        const cicloCalor = Math.sin(t * 0.08) * 1.2;
+        const tempFinal = parseFloat((89.5 + cicloCalor).toFixed(1));
 
-        // Vibración armónica monocilíndrica pareja (0.93g a 0.96g)
-        const microVib = Math.sin(t * 0.18) * 0.015;
-        estadoFisicaMotor.vibracionG = 0.94 + microVib;
-
-        const tempFinal = parseFloat(estadoFisicaMotor.tempCulata.toFixed(1));
-        const vibFinal = parseFloat(estadoFisicaMotor.vibracionG.toFixed(2));
+        // Vibración armónica monocilíndrica parejo (0.88g a 1.04g)
+        const cicloVib = Math.sin(t * 0.16) * 0.08;
+        const vibFinal = parseFloat((0.96 + cicloVib).toFixed(2));
         const hora = new Date().toLocaleTimeString();
 
         lecturasTemporalesTemp.push(tempFinal);
         lecturasTemporalesVib.push(vibFinal);
 
-        // Actualizar tarjetas en Telemetría en Vivo
+        // Actualizar valores en Telemetría en Vivo
         const teleTemp = document.getElementById("val-temp-telemetria");
         const teleVib = document.getElementById("val-vib-telemetria");
         if (teleTemp) teleTemp.innerText = `${tempFinal} °C`;
         if (teleVib) teleVib.innerText = `${vibFinal} g`;
 
-        // Actualizar tarjetas en Panel General
+        // Actualizar valores en Panel General
         const generalTemp = document.getElementById("val-temp-media");
         const generalVib = document.getElementById("val-vibracion");
         const generalEstado = document.getElementById("val-estado-global");
         if (generalTemp) generalTemp.innerText = `${tempFinal} °C`;
         if (generalVib) generalVib.innerText = `${vibFinal} g`;
         if (generalEstado) {
-            generalEstado.innerText = "Operación Normal (89.4°C Parejo)";
+            generalEstado.innerText = "Operación Normal";
             generalEstado.style.color = "#10B981";
         }
 
-        // Actualizar gráficos continuos
+        // Gráficos continuos dinámicos
         if (chartGeneral) {
             if (chartGeneral.data.labels.length > 15) {
                 chartGeneral.data.labels.shift();
                 chartGeneral.data.datasets[0].data.shift();
-                chartGeneral.data.datasets[1].data.shift();
             }
             chartGeneral.data.labels.push(hora);
             chartGeneral.data.datasets[0].data.push(tempFinal);
-            chartGeneral.data.datasets[1].data.push(vibFinal);
             chartGeneral.update();
         }
 
@@ -1033,22 +1067,22 @@ function detenerMedicionSimulada() {
     }
 
     // Obtener promedios reales o lectura actual
-    let promTemp = estadoFisicaMotor.tempCulata.toFixed(1);
-    let promVib = estadoFisicaMotor.vibracionG.toFixed(2);
+    let promTemp = (89.5).toFixed(1);
+    let promVib = (0.96).toFixed(2);
 
     if (lecturasTemporalesTemp && lecturasTemporalesTemp.length > 0) {
         promTemp = (lecturasTemporalesTemp.reduce((a, b) => a + b, 0) / lecturasTemporalesTemp.length).toFixed(1);
         promVib = (lecturasTemporalesVib.reduce((a, b) => a + b, 0) / lecturasTemporalesVib.length).toFixed(2);
     }
 
-    // Actualizar etiquetas de estado en ambas vistas
+    // Actualizar etiquetas de estado en ambas vistas sin emojis
     const estadoLbl = document.getElementById("estado-medicion-lbl");
     if (estadoLbl) {
-        estadoLbl.innerHTML = `<span style="color:#10B981; font-weight:600;">✅ Medición finalizada (${nombreModulo}): Temp ${promTemp}°C | Vib ${promVib}g guardada en base de datos e historial.</span>`;
+        estadoLbl.innerHTML = `<span style="color:#10B981; font-weight:600;">[Guardado] Medición finalizada (${nombreModulo}): Temp ${promTemp}°C | Vib ${promVib}g guardada en historial y base de datos.</span>`;
     }
     const teleLiveStatus = document.getElementById("telemetria-live-status-lbl");
     if (teleLiveStatus) {
-        teleLiveStatus.innerHTML = `<span style="color:#10B981; font-weight:600;">✅ Sesión guardada: ${promTemp}°C / ${promVib}g</span>`;
+        teleLiveStatus.innerHTML = `<span style="color:#10B981; font-weight:600;">[Guardado] Sesión guardada: ${promTemp}°C / ${promVib}g</span>`;
     }
 
     let severidad = "Normal";
@@ -1293,7 +1327,7 @@ async function enviarMensajeIA() {
     if (respuestaTexto) {
         botDiv.innerHTML = formatearRespuestaMarkdown(respuestaTexto);
     } else {
-        botDiv.innerHTML = `<div style="color:#DC2626;">⚠️ No fue posible consultar al asistente. ${ultimoError ? '(' + ultimoError + ')' : ''}</div><div style="font-size:11px; margin-top:4px; color:#64748B;">Si estás en Vercel, asegúrate de configurar la variable de entorno GEMINI_API_KEY en Project Settings > Environment Variables.</div>`;
+        botDiv.innerHTML = `<div style="color:#DC2626;">[Alerta] No fue posible consultar al asistente. ${ultimoError ? '(' + ultimoError + ')' : ''}</div><div style="font-size:11px; margin-top:4px; color:#64748B;">Si estás en Vercel, asegúrate de configurar la variable de entorno GEMINI_API_KEY en Project Settings > Environment Variables.</div>`;
     }
 
     container.appendChild(botDiv);
@@ -1305,7 +1339,7 @@ function registrarFallaDesdeConfiguracion() {
     const falla = prompt("Ingresa el reporte de anomalía, mantenimiento o revisión de la moto:", "Inspección de bujía, calibración de válvulas y cambio de aceite");
     if (falla && falla.trim()) {
         agregarEntradaHistorial("Configuración & Moto", falla.trim(), "Preventivo", "Registrado");
-        mostrarNotificacionGuardado("✅ Registrado en Historial", falla.trim());
+        mostrarNotificacionGuardado("[Guardado] Registrado en Historial", falla.trim());
         alert("Reporte guardado en el Historial de Fallas con éxito.");
     }
 }

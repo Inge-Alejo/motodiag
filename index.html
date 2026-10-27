@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%232563EB'/><path d='M10 16 L14 12 L18 20 L22 14' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/></svg>">
     <title>MotoDiag IA - Diagnóstico Predictivo & Telemetría</title>
-    <link rel="stylesheet" href="css/styles.css?v=1793075010724">
+    <link rel="stylesheet" href="css/styles.css?v=1793075563908">
     <!-- Chart.js para visualización de telemetría -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -39,7 +39,7 @@
                 
                 <div class="password-container">
                     <input type="password" id="login-pass" placeholder="Contraseña..." onkeypress="handleEnter(event, 'login')">
-                    <button type="button" class="toggle-password" onclick="togglePasswordVisibility('login-pass', this)">👁️</button>
+                    <button type="button" class="toggle-password" onclick="togglePasswordVisibility('login-pass', this)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                 </div>
 
                 <button onclick="iniciarSesion()">Entrar al Sistema</button>
@@ -57,7 +57,7 @@
                 
                 <div class="password-container">
                     <input type="password" id="reg-pass" placeholder="Contraseña...">
-                    <button type="button" class="toggle-password" onclick="togglePasswordVisibility('reg-pass', this)">👁️</button>
+                    <button type="button" class="toggle-password" onclick="togglePasswordVisibility('reg-pass', this)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                 </div>
 
                 <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 15px 0;">
@@ -78,7 +78,7 @@
                 
                 <div class="password-container">
                     <input type="password" id="rec-new-pass" placeholder="Nueva contraseña...">
-                    <button type="button" class="toggle-password" onclick="togglePasswordVisibility('rec-new-pass', this)">👁️</button>
+                    <button type="button" class="toggle-password" onclick="togglePasswordVisibility('rec-new-pass', this)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                 </div>
 
                 <button onclick="cambiarContrasena()" style="background: #F59E0B;">Actualizar Contraseña</button>
@@ -110,15 +110,25 @@
             <div class="menu-item" onclick="switchView('dispositivo', this)">Dispositivo ESP32</div>
             <div class="menu-item" onclick="switchView('historial', this)">Historial de Fallas</div>
             <div class="menu-item" onclick="switchView('configuracion', this)">Configuración & Moto</div>
-            
+            <div class="menu-item ai-chat" onclick="toggleChat()" style="margin-top: 15px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                Asistente IA (Gemini)
             </div>
+            <div class="logout-btn" onclick="cerrarSesion()">Cerrar Sesión</div>
+        </div>
 
         <!-- CONTENIDO PRINCIPAL -->
         <div class="main-content">
             <div class="topbar">
                 <h1 id="page-title">Resumen del Motor</h1>
-                <div class="user-info">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button type="button" id="btn-topbar-ai" class="btn-save" onclick="toggleChat()" style="background: #2563EB; font-size: 13px; padding: 7px 14px; border-radius: 6px; margin: 0; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                        Asistente IA
+                    </button>
+                    <div class="user-info">
                     Usuario: <span id="display-username"></span> | <span id="display-user-moto" style="color: #64748B;">Cargando moto...</span>
+                </div>
                 </div>
             </div>
 
@@ -183,14 +193,14 @@
                       <div id="telemetria-ctrl-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #FFFFFF; padding: 14px 18px; border-radius: 12px; border: 1px solid #E2E8F0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-wrap: wrap; gap: 10px;">
                           <div>
                               <strong style="color: #0F172A; font-size: 14px;">Adquisición de Telemetría (Yamaha YCZ 110):</strong>
-                              <span id="telemetria-live-status-lbl" style="margin-left: 8px; font-size: 13px; color: #10B981; font-weight: 600;">● Sensores activos en rango óptimo</span>
+                              <span id="telemetria-live-status-lbl" style="margin-left: 8px; font-size: 13px; color: #10B981; font-weight: 600;">Sensores activos en rango óptimo</span>
                           </div>
                           <div style="display: flex; gap: 10px;">
                               <button type="button" class="btn-save" onclick="iniciarMedicionSimulada()" style="background: #10B981; padding: 8px 16px; font-size: 13px; margin: 0; border-radius: 6px;">
-                                  📊 Iniciar Medición
+                                  Iniciar Medición
                               </button>
                               <button type="button" class="btn-save" onclick="detenerMedicionSimulada()" style="background: #EF4444; padding: 8px 16px; font-size: 13px; margin: 0; border-radius: 6px;">
-                                  ⏹️ Parar y Guardar en BD
+                                  Parar y Guardar en BD
                               </button>
                           </div>
                       </div>
@@ -239,7 +249,7 @@
                         </div>
                         <div class="device-header-actions">
                             <button onclick="toggleSimularESP32()" id="btn-simular-esp32" class="btn-save" style="background: #6366F1; font-size: 13px; padding: 8px 14px;">
-                                ⚡ Simular Envío ESP32
+                                Simular Envío ESP32
                             </button>
                         </div>
                     </div>
@@ -247,19 +257,19 @@
                     <!-- Ficha Técnica de Hardware Conectado -->
                     <div class="hardware-spec-grid">
                         <div class="spec-card">
-                            <h4>📟 Microcontrolador</h4>
+                            <h4>Microcontrolador</h4>
                             <p style="margin: 4px 0; font-size: 13px;"><strong>Modelo:</strong> ESP32 DevKit V1 (30 pines)</p>
                             <p style="margin: 4px 0; font-size: 13px;"><strong>Transmisión:</strong> HTTP / Firebase RTDB</p>
                             <p style="margin: 4px 0; font-size: 13px;"><strong>Frecuencia:</strong> <span class="pin-badge">500 ms</span></p>
                         </div>
                         <div class="spec-card">
-                            <h4>🌡️ Sensor Térmico</h4>
+                            <h4>Sensor Térmico</h4>
                             <p style="margin: 4px 0; font-size: 13px;"><strong>Sensor:</strong> DS18B20 Blindado Sumergible</p>
                             <p style="margin: 4px 0; font-size: 13px;"><strong>Pin Datos:</strong> <span class="pin-badge">GPIO 4</span> (Pull-up 4.7kΩ)</p>
                             <p style="margin: 4px 0; font-size: 13px;"><strong>Ubicación:</strong> Culata / Cilindro YCZ 110</p>
                         </div>
                         <div class="spec-card">
-                            <h4>📳 Sensor Inercial (IMU)</h4>
+                            <h4>Sensor Inercial (IMU)</h4>
                             <p style="margin: 4px 0; font-size: 13px;"><strong>Sensor:</strong> MPU6050 (Acelerómetro 6-DOF)</p>
                             <p style="margin: 4px 0; font-size: 13px;"><strong>Pines I2C:</strong> <span class="pin-badge">SDA: 21</span> | <span class="pin-badge">SCL: 22</span></p>
                             <p style="margin: 4px 0; font-size: 13px;"><strong>Dirección I2C:</strong> <span class="pin-badge">0x68</span></p>
@@ -327,7 +337,7 @@
                             <div class="firebase-config-box">
                                 <details>
                                     <summary style="cursor: pointer; font-size: 13px; font-weight: 600; color: #2563EB;">
-                                        ⚙️ Configuración de Credenciales de Firebase (Haz clic para ver/editar)
+                                        Configuración de Credenciales de Firebase (Haz clic para ver/editar)
                                     </summary>
                                     <div style="margin-top: 10px; display: grid; gap: 8px;">
                                         <input type="text" id="fb-cfg-apiKey" placeholder="apiKey (ej. AIzaSy...)" style="font-size: 12px; padding: 6px;">
@@ -349,9 +359,9 @@
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                         <h3 style="margin: 0;">Registro de Anomalías e Historial (Base de Datos)</h3>
                         <div style="display: flex; gap: 8px;">
-                            <button type="button" class="btn-save" style="background: #2563EB; font-size: 12px; padding: 6px 12px; margin: 0; border-radius: 6px;" onclick="cargarHistorialFallas()">🔄 Refrescar</button>
-                            <button type="button" class="btn-save" style="background: #059669; font-size: 12px; padding: 6px 12px; margin: 0; border-radius: 6px;" onclick="simularRegistroDiagnostico()">➕ Simular Evento</button>
-                            <button type="button" class="btn-save" style="background: #DC2626; font-size: 12px; padding: 6px 12px; margin: 0; border-radius: 6px;" onclick="limpiarHistorialFallas()">🗑️ Vaciar</button>
+                            <button type="button" class="btn-save" style="background: #2563EB; font-size: 12px; padding: 6px 12px; margin: 0; border-radius: 6px;" onclick="cargarHistorialFallas()">Refrescar</button>
+                            <button type="button" class="btn-save" style="background: #059669; font-size: 12px; padding: 6px 12px; margin: 0; border-radius: 6px;" onclick="simularRegistroDiagnostico()">Simular Evento</button>
+                            <button type="button" class="btn-save" style="background: #DC2626; font-size: 12px; padding: 6px 12px; margin: 0; border-radius: 6px;" onclick="limpiarHistorialFallas()">Vaciar</button>
                         </div>
                     </div>
                         <table>
@@ -383,15 +393,15 @@
                             </div>
                             <div style="display: flex; gap: 10px; margin-top: 15px;">
                                 <button class="btn-save" onclick="iniciarMedicionSimulada()" style="background: #10B981; flex: 1;">
-                                    📊 Iniciar Medición
+                                    Iniciar Medición
                                 </button>
                                 <button class="btn-save" onclick="detenerMedicionSimulada()" style="background: #EF4444; flex: 1;">
-                                    ⏹️ Parar Medición
+                                    Parar Medición
                                 </button>
                             </div>
                             
                               <button type="button" class="btn-save" onclick="registrarFallaDesdeConfiguracion()" style="background: #2563EB; width: 100%; margin-top: 10px; border-radius: 6px;">
-                                  📝 Registrar Mantenimiento / Falla en Historial
+                                  Registrar Mantenimiento / Falla en Historial
                               </button>
     
                               <p id="estado-medicion-lbl" style="font-size: 12px; color: #64748B; margin-top: 12px;">Estado: Sensores en reposo (Inactivos).</p>
@@ -408,8 +418,8 @@
     <!-- WIDGET DEL ASISTENTE IA (GEMINI) -->
     <div class="chat-widget" id="chatWidget">
         <div class="chat-header">
-            <div>Asistente IA (Gemini) <span>🟢</span></div>
-            <div class="close-btn" onclick="toggleChat()">✖</div>
+            <div>Asistente IA (Gemini) <span></span></div>
+            <div class="close-btn" onclick="toggleChat()">X</div>
         </div>
         <div class="chat-messages" id="chat-messages-container">
             <div class="message bot" id="bot-greeting">
@@ -422,18 +432,25 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=1793075010724"></script>
+    <script src="js/app.js?v=1793076138529"></script>
 
       <!-- NOTIFICACIÓN FLOTANTE DE GUARDADO EXITOSO -->
-      <div id="toast-notification" style="display: none; position: fixed; bottom: 24px; right: 24px; background: #0F172A; color: white; padding: 14px 20px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.25); z-index: 10000; border-left: 5px solid #10B981; max-width: 380px; animation: fadeIn 0.3s ease;">
+      <div id="toast-notification" style="display: none; position: fixed; top: 24px; right: 24px; background: #0F172A; color: white; padding: 14px 20px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.25); z-index: 10000; border-left: 5px solid #10B981; max-width: 380px; animation: fadeIn 0.3s ease;">
           <div style="display: flex; align-items: flex-start; gap: 12px;">
-              <span style="font-size: 20px;">✅</span>
+              <span style="font-size: 20px;"></span>
               <div>
                   <div id="toast-title" style="font-weight: 700; font-size: 14px; margin-bottom: 2px;">Medición Guardada</div>
                   <div id="toast-message" style="font-size: 12.5px; color: #CBD5E1;">Los datos han sido almacenados en el historial y base de datos.</div>
               </div>
           </div>
       </div>
+    
+
+      <!-- BOTÓN FLOTANTE ASISTENTE IA -->
+      <button id="btn-floating-chat" onclick="toggleChat()" style="position: fixed; bottom: 24px; right: 24px; background: #2563EB; color: white; border: none; border-radius: 30px; padding: 12px 22px; font-weight: 700; font-size: 13.5px; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4); cursor: pointer; z-index: 9995; display: flex; align-items: center; gap: 8px; font-family: inherit;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          Asistente IA
+      </button>
     
 </body>
 </html>
