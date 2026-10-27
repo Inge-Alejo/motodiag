@@ -12,14 +12,26 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <Wire.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
 #include <math.h>
-#include "src/config.h"
 
-// Instancias de sensores físicos
-OneWire oneWire(ONE_WIRE_BUS_PIN);
-DallasTemperature ds18b20(&oneWire);
+#if __has_include("config.h")
+  #include "config.h"
+#elif __has_include("src/config.h")
+  #include "src/config.h"
+#else
+  #include "config.h"
+#endif
+
+// Sensores físicos: solo se requieren si la simulación está desactivada y las librerías están instaladas
+#if !SIMULACION_ACTIVA && __has_include(<OneWire.h>) && __has_include(<DallasTemperature.h>)
+  #include <OneWire.h>
+  #include <DallasTemperature.h>
+  #define HARDWARE_ONEWIRE_DISPONIBLE 1
+  OneWire oneWire(ONE_WIRE_BUS_PIN);
+  DallasTemperature ds18b20(&oneWire);
+#else
+  #define HARDWARE_ONEWIRE_DISPONIBLE 0
+#endif
 
 // Banderas de estado de hardware
 bool mpuAvailable = false;
@@ -289,7 +301,8 @@ void setup() {
     Serial.println("[Sensor MPU6050] INFO -> No detectado en bus I2C (usando simulacion).");
   }
 
-  // Inicializar sensor térmico DS18B20
+  // Inicializar sensor térmico DS18B20 si está disponible
+#if HARDWARE_ONEWIRE_DISPONIBLE
   ds18b20.begin();
   ds18b20.setResolution(10);
   dsAvailable = (ds18b20.getDeviceCount() > 0);
@@ -298,6 +311,13 @@ void setup() {
   } else {
     Serial.println("[Sensor DS18B20] INFO -> Sonda no detectada en GPIO 4 (usando simulacion).");
   }
+#else
+  #if SIMULACION_ACTIVA
+    Serial.println("[Sensor DS18B20] Modo Simulacion Activo (Sin dependencias externas).");
+  #else
+    Serial.println("[Sensor DS18B20] Nota: Instalar 'OneWire' y 'DallasTemperature' en Arduino IDE.");
+  #endif
+#endif
 
   // Conectar a WiFi
   conectarWiFi();
@@ -343,11 +363,13 @@ void loop() {
   }
 
   // 2. Lectura del Sensor Térmico DS18B20
+  #if HARDWARE_ONEWIRE_DISPONIBLE
   if (dsAvailable) {
     ds18b20.requestTemperatures();
     tempC = ds18b20.getTempCByIndex(0);
     dsOk = (tempC != DEVICE_DISCONNECTED_C && tempC > -50.0f && tempC < 150.0f);
   }
+  #endif
 
   // Fallback: si no hay sensores físicos conectados en el banco, usar simulación parejo
   if (!dsOk || !mpuOk) {
