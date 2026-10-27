@@ -1,0 +1,18 @@
+﻿{
+  "name": "motodiag",
+  "version": "1.0.0",
+  "description": "Plataforma de Diagnóstico Predictivo y Telemetría para Motocicletas con Asistente IA (Gemini)",
+  "type": "module",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "keywords": [
+    "telemetria",
+    "motocicletas",
+    "diagnostico-predictivo",
+    "gemini-ai",
+    "vercel"
+  ],
+  "author": "Inge-Alejo",
+  "license": "MIT"
+}
