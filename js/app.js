@@ -374,6 +374,8 @@ function cerrarSesion() {
 
     if (appContainer) appContainer.style.display = "none";
     if (chatWidget) chatWidget.style.display = "none";
+    const btnFloating = document.getElementById("btn-floating-chat");
+    if (btnFloating) btnFloating.style.display = "flex";
 
     if (loginScreen) {
         loginScreen.style.display = "flex";
@@ -718,8 +720,18 @@ function switchView(viewId, menuItem) {
 
 function toggleChat() {
     const chatWidget = document.getElementById('chatWidget');
+    const btnFloating = document.getElementById('btn-floating-chat');
     if (chatWidget) {
-        chatWidget.style.display = (chatWidget.style.display === 'flex') ? 'none' : 'flex';
+        const isActivo = (chatWidget.style.display === 'flex');
+        if (isActivo) {
+            chatWidget.style.display = 'none';
+            if (btnFloating) btnFloating.style.display = 'flex';
+        } else {
+            chatWidget.style.display = 'flex';
+            if (btnFloating) btnFloating.style.display = 'none';
+            const inputField = document.getElementById('chat-input-field');
+            if (inputField) inputField.focus();
+        }
     }
 }
 
@@ -925,7 +937,7 @@ function iniciarMedicionSimulada() {
 
     const estadoLbl = document.getElementById("estado-medicion-lbl");
     if (estadoLbl) {
-        estadoLbl.innerHTML = '<span style="color:#10B981; font-weight:600;">[Activo] Medición en vivo activa (Dinámica entre 82°C y 98°C).</span>';
+        estadoLbl.innerHTML = '<span style="color:#10B981; font-weight:600;">[Activo] Medición en tiempo real activa.</span>';
     }
 
     lecturasTemporalesTemp = [];

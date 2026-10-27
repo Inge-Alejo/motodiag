@@ -387,16 +387,16 @@ th { color: #64748B; font-weight: 600; }
 .chat-widget {
     display: none;
     position: fixed;
-    bottom: 30px;
-    right: 30px;
+    bottom: 24px;
+    right: 24px;
     width: 360px;
     background: white;
     border-radius: 12px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+    box-shadow: 0 12px 35px rgba(0,0,0,0.2);
     flex-direction: column;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #cbd5e1;
     overflow: hidden;
-    z-index: 1000;
+    z-index: 10005;
 }
 .chat-header {
     background: #2563EB;
