@@ -382,7 +382,7 @@ async function enviarMensajeIA() {
         const localKey = localStorage.getItem("motoDiag_gemini_key");
         if (localKey) {
             const promptSistema = `Eres un asistente mecánico experto de la plataforma "MotoDiag IA". El usuario maneja una motocicleta ${motoData.marca} ${motoData.modelo} con cilindraje ${motoData.cilindraje}. Responde de forma técnica pero accesible y breve a cualquier duda sobre mantenimiento, telemetría, temperatura, vibración o fallas mecánicas de su vehículo. Pregunta del usuario: "${mensaje}"`;
-            const modelosDisponibles = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+            const modelosDisponibles = ["gemini-flash-lite-latest", "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.8-pro"];
 
             for (const modelo of modelosDisponibles) {
                 try {

@@ -15,10 +15,12 @@
         return res.status(405).json({ error: 'Método no permitido. Solo se acepta POST.' });
     }
 
+    // Vercel inyecta automáticamente las variables de entorno configuradas en Project Settings > Environment Variables
     const apiKey = process.env.GEMINI_API_KEY;
+
     if (!apiKey) {
         return res.status(500).json({
-            error: 'La variable de entorno GEMINI_API_KEY no está configurada en Vercel.'
+            error: 'La variable de entorno GEMINI_API_KEY no está configurada en Vercel. Por favor agrégala en los ajustes del proyecto.'
         });
     }
 
@@ -35,9 +37,10 @@
         const promptSistema = `Eres un asistente mecánico experto de la plataforma "MotoDiag IA". El usuario maneja una motocicleta ${marca} ${modelo} con cilindraje ${cilindraje}. Responde de forma técnica pero accesible, profesional y concisa a cualquier duda sobre mantenimiento, telemetría, temperatura, vibración o fallas mecánicas de su vehículo. Pregunta del usuario: "${message}"`;
 
         const modelos = [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash"
+            "gemini-flash-lite-latest",
+            "gemini-3.8-flash",
+            "gemini-flash-latest",
+            "gemini-3.8-pro"
         ];
 
         let respuestaTexto = null;
