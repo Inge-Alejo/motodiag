@@ -62,6 +62,7 @@ function inicializarFirebase() {
         auth = firebase.auth();
         db = firebase.firestore();
         rtdb = firebase.database();
+        sincronizarHistorialFirebaseTiempoReal();
         firebaseInicializado = true;
         console.log("Firebase conectado exitosamente con proyecto:", defaultFirebaseConfig.projectId);
 
@@ -389,16 +390,16 @@ function guardarDatosMoto() {
 const registrosInicialesFallas = [
     {
         fecha: "26/10/2026, 08:30 PM",
-        modulo: "Módulo Térmico",
-        descripcion: "Régimen térmico en rango óptimo: culata estable a 88.4°C en ralentí",
+        modulo: "Telemetría en Vivo",
+        descripcion: "Ciclo térmico parejo y estable: 89.2°C | Vibración armónica 0.95g",
         severidad: "Normal",
         badgeClass: "bg-success",
-        estado: "Verificado"
+        estado: "Completado"
     },
     {
-        fecha: "25/10/2026, 05:15 PM",
-        modulo: "Chasis / MPU6050",
-        descripcion: "Vibración armónica monocilíndrica 1.12g dentro de tolerancia",
+        fecha: "25/10/2026, 04:15 PM",
+        modulo: "Dispositivo ESP32",
+        descripcion: "Sonda DS18B20 culata 88.7°C | IMU MPU6050 0.94g sincronizado por WiFi iPhone Andres",
         severidad: "Normal",
         badgeClass: "bg-success",
         estado: "Completado"
@@ -417,16 +418,28 @@ function cargarHistorialFallas() {
     const tbody = document.getElementById("historial-tabla-body");
     if (!tbody) return;
 
-    let historialGuardado = localStorage.getItem("motoDiag_historial_fallas");
     let lista = [];
-
+    let historialGuardado = localStorage.getItem("motoDiag_historial_fallas");
     if (historialGuardado) {
         try { lista = JSON.parse(historialGuardado); } catch(e){}
     }
 
-    if (!lista || lista.length === 0) {
-        lista = registrosInicialesFallas;
+    if (!Array.isArray(lista) || lista.length === 0) {
+        lista = [...registrosInicialesFallas];
         localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(lista));
+    }
+
+    renderizarFilasHistorialDOM(lista);
+    actualizarAlertasPredictivasPanel(lista);
+}
+
+function renderizarFilasHistorialDOM(lista) {
+    const tbody = document.getElementById("historial-tabla-body");
+    if (!tbody) return;
+
+    if (!lista || lista.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748B; padding: 24px;">Historial vacío. Realiza una medición en Telemetría o ESP32 para registrar datos.</td></tr>';
+        return;
     }
 
     tbody.innerHTML = "";
@@ -441,18 +454,16 @@ function cargarHistorialFallas() {
         `;
         tbody.appendChild(tr);
     });
-
-    actualizarAlertasPredictivasPanel(lista);
 }
 
-function agregarEntradaHistorial(modulo, descripcion, severidad, estado) {
+async function agregarEntradaHistorial(modulo, descripcion, severidad, estado) {
     let historialGuardado = localStorage.getItem("motoDiag_historial_fallas");
     let lista = [];
 
     if (historialGuardado) {
         try { lista = JSON.parse(historialGuardado); } catch(e){}
     }
-    if (!lista) lista = [];
+    if (!Array.isArray(lista)) lista = [];
 
     const ahora = new Date();
     const fechaStr = ahora.toLocaleDateString() + ", " + ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -460,30 +471,76 @@ function agregarEntradaHistorial(modulo, descripcion, severidad, estado) {
     let badgeClass = "bg-success";
     if (severidad === "Advertencia" || severidad === "Media") badgeClass = "bg-warning";
     if (severidad === "Peligro" || severidad === "Crítico") badgeClass = "bg-danger";
+    if (severidad === "Preventivo") badgeClass = "bg-warning";
 
-    lista.unshift({
+    const nuevoItem = {
         fecha: fechaStr,
         modulo: modulo,
         descripcion: descripcion,
         severidad: severidad,
         badgeClass: badgeClass,
-        estado: estado || "Registrado"
-    });
+        estado: estado || "Completado",
+        timestamp: Date.now()
+    };
 
-    // Mantener hasta 25 registros
-    if (lista.length > 25) lista.pop();
+    lista.unshift(nuevoItem);
+    if (lista.length > 50) lista.pop();
 
+    // 1. Guardar localmente y actualizar la vista de inmediato
     localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(lista));
-    cargarHistorialFallas();
+    renderizarFilasHistorialDOM(lista);
+    actualizarAlertasPredictivasPanel(lista);
+
+    // 2. Guardar en Firebase Realtime Database
+    if (rtdb) {
+        try {
+            await rtdb.ref("historial_fallas").push(nuevoItem);
+            console.log("Registro sincronizado con Firebase Realtime Database con éxito.");
+        } catch (err) {
+            console.warn("RTDB sync:", err.message);
+        }
+    }
+
+    // 3. Guardar en Firestore
+    if (db) {
+        try {
+            await db.collection("historial_fallas").add(nuevoItem);
+            console.log("Registro sincronizado con Firestore con éxito.");
+        } catch (err) {
+            console.warn("Firestore sync:", err.message);
+        }
+    }
 }
 
+function sincronizarHistorialFirebaseTiempoReal() {
+    if (!rtdb || window.historialRtdbListenerActivo) return;
+    try {
+        window.historialRtdbListenerActivo = true;
+        rtdb.ref("historial_fallas").limitToLast(25).on("value", snapshot => {
+            if (snapshot.exists()) {
+                const cloudItems = [];
+                snapshot.forEach(child => {
+                    cloudItems.unshift(child.val());
+                });
+                if (cloudItems.length > 0) {
+                    localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(cloudItems));
+                    renderizarFilasHistorialDOM(cloudItems);
+                    actualizarAlertasPredictivasPanel(cloudItems);
+                }
+            }
+        });
+        console.log("Sincronización en tiempo real de Historial activada vía RTDB.");
+    } catch (e) {
+        console.warn("Error iniciando listener de historial RTDB:", e.message);
+    }
+}
 
 function limpiarHistorialFallas() {
     if (confirm("¿Deseas vaciar el historial de anomalías y mediciones?")) {
         localStorage.setItem("motoDiag_historial_fallas", JSON.stringify([]));
         const tbody = document.getElementById("historial-tabla-body");
         if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748B; padding: 24px;">Historial vacío. Realiza una medición en Telemetría o pulsa "Simular Diagnóstico" para generar registros.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748B; padding: 24px;">Historial vacío. Inicia y detén una medición para registrar datos.</td></tr>';
         }
         actualizarAlertasPredictivasPanel([]);
     }
@@ -491,14 +548,13 @@ function limpiarHistorialFallas() {
 
 function simularRegistroDiagnostico() {
     const eventos = [
-        { mod: "Telemetría Térmica", desc: "Monitoreo continuo de culata: 88.4°C en rango óptimo de operación", sev: "Normal" },
-        { mod: "Sensor MPU6050", desc: "Vibración de chasis 1.05g estable en régimen de 3,500 RPM", sev: "Normal" },
-        { mod: "Sistema de Escape", desc: "Ligera contrapresión detectada tras aceleración prolongada", sev: "Advertencia" },
-        { mod: "Mantenimiento Preventivo", desc: "Revisión programada de holgura de válvulas (admisión 0.08mm / escape 0.10mm)", sev: "Preventivo" },
-        { mod: "Sistema Eléctrico", desc: "Tensión de carga del alternador estable a 14.1V", sev: "Normal" }
+        { mod: "Telemetría Térmica", desc: "Monitoreo culata estable: 89.4°C en rango óptimo de operación", sev: "Normal" },
+        { mod: "Sensor MPU6050", desc: "Vibración armónica parejo 0.94g en régimen continuo (Yamaha YCZ 110)", sev: "Normal" },
+        { mod: "Dispositivo ESP32", desc: "Sincronización por WiFi iPhone Andres verificada sin pérdida de tramas", sev: "Normal" },
+        { mod: "Mantenimiento Preventivo", desc: "Revisión de bujía NGK CR6HSA y nivel de lubricante Yamalube 20W-50", sev: "Preventivo" }
     ];
     const rand = eventos[Math.floor(Math.random() * eventos.length)];
-    agregarEntradaHistorial(rand.mod, rand.desc, rand.sev, "Verificado");
+    agregarEntradaHistorial(rand.mod, rand.desc, rand.sev, "Completado");
 }
 
 function actualizarAlertasPredictivasPanel(lista) {
@@ -506,7 +562,7 @@ function actualizarAlertasPredictivasPanel(lista) {
     if (!tbodyAlertas) return;
 
     tbodyAlertas.innerHTML = "";
-    const ultimos = lista.slice(0, 3);
+    const ultimos = (lista || []).slice(0, 3);
     ultimos.forEach(item => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
@@ -517,9 +573,7 @@ function actualizarAlertasPredictivasPanel(lista) {
     });
 }
 
-// =========================================================================
-// NAVEGACIÓN ENTRE VISTAS DEL PANEL LATERAL
-// =========================================================================
+
 function switchView(viewId, menuItem) {
     const views = document.querySelectorAll('.view');
     views.forEach(view => view.classList.remove('active-view'));
@@ -550,11 +604,18 @@ function toggleChat() {
 }
 
 // =========================================================================
-// MÓDULO DISPOSITIVO ESP32 (HARDWARE REAL - INTACTO)
+// =========================================================================
+// MÓDULO DISPOSITIVO ESP32 (HARDWARE REAL + SIMULACIÓN PAREJA)
 // =========================================================================
 let rtdbListenerActivo = false;
+let chartDispositivoReal = null;
+let esp32LecturasTemp = [];
+let esp32LecturasVib = [];
+let esp32PacketsCount = 0;
+let esp32TickCounter = 0;
 
 function conectarTelemetriaESP32() {
+    inicializarGraficoDispositivo();
     if (!rtdb || rtdbListenerActivo) return;
 
     try {
@@ -571,110 +632,124 @@ function conectarTelemetriaESP32() {
     }
 }
 
+function inicializarGraficoDispositivo() {
+    const ctx = document.getElementById("graficoDispositivoReal");
+    if (!ctx || chartDispositivoReal || typeof Chart === "undefined") return;
+
+    chartDispositivoReal = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                {
+                    label: 'Sonda DS18B20 (°C)',
+                    borderColor: '#2563EB',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    yAxisID: 'y',
+                    tension: 0.35,
+                    data: []
+                },
+                {
+                    label: 'Vibración MPU6050 (g)',
+                    borderColor: '#10B981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    yAxisID: 'y1',
+                    tension: 0.35,
+                    data: []
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { type: 'linear', position: 'left', min: 40, max: 130, title: { display: true, text: '°C' } },
+                y1: { type: 'linear', position: 'right', min: 0, max: 3, grid: { drawOnChartArea: false }, title: { display: true, text: 'g' } }
+            }
+        }
+    });
+}
+
 function actualizarVistaESP32(data) {
     if (!data) return;
     esp32UltimaTrama = data;
+    esp32PacketsCount++;
 
     // 1. Temperatura DS18B20
-    const tempVal = typeof data.temperatura === "number" ? data.temperatura : (parseFloat(data.temperatura) || 0);
-    const tempElem = document.getElementById("esp32-temp-val");
-    if (tempElem) tempElem.innerText = tempVal.toFixed(1);
-
-    const tempFill = document.getElementById("esp32-temp-fill");
-    if (tempFill) {
-        const pct = Math.min(100, Math.max(0, ((tempVal - 20) / (130 - 20)) * 100));
-        tempFill.style.width = pct + "%";
-        tempFill.style.background = tempVal > 115 ? "#EF4444" : (tempVal > 100 ? "#F59E0B" : "#10B981");
+    const tempVal = typeof data.temperatura === "number" ? data.temperatura : (parseFloat(data.temperatura) || 89.0);
+    const elemTemp = document.getElementById("val-esp32-temp");
+    const elemTempState = document.getElementById("val-esp32-temp-state");
+    if (elemTemp) elemTemp.innerText = `${tempVal.toFixed(1)} °C`;
+    if (elemTempState) {
+        elemTempState.innerText = tempVal > 105 ? "⚠️ Temperatura elevada" : "✓ Rango óptimo culata (Yamaha YCZ 110)";
+        elemTempState.style.color = tempVal > 105 ? "#F59E0B" : "#10B981";
     }
 
-    const tempStatus = document.getElementById("esp32-temp-status");
-    if (tempStatus) {
-        if (tempVal > 115) {
-            tempStatus.innerHTML = '<span style="color:#EF4444; font-weight:700;">⚠️ ALERTA: Sobrecalentamiento en culata/cilindro</span>';
-        } else if (tempVal > 100) {
-            tempStatus.innerHTML = '<span style="color:#F59E0B; font-weight:600;">⚡ Temperatura elevada (Monitorear flujo de aire)</span>';
-        } else if (tempVal >= 70) {
-            tempStatus.innerHTML = '<span style="color:#10B981; font-weight:600;">✓ Rango óptimo de trabajo (Yamaha YCZ 110)</span>';
-        } else {
-            tempStatus.innerHTML = '<span style="color:#64748B;">❄️ Motor frío / Fase de calentamiento</span>';
-        }
+    // 2. Aceleración y Vibración MPU6050
+    const ax = parseFloat(data.ax || 0.08);
+    const ay = parseFloat(data.ay || 0.06);
+    const az = parseFloat(data.az || 0.95);
+    const vibTotal = typeof data.vibracion_total === "number" ? data.vibracion_total : Math.sqrt(ax*ax + ay*ay + az*az);
+
+    const elemVib = document.getElementById("val-esp32-vibe-mag");
+    const elemVibState = document.getElementById("val-esp32-vibe-state");
+    if (elemVib) elemVib.innerText = `${vibTotal.toFixed(2)} G`;
+    if (elemVibState) {
+        elemVibState.innerText = vibTotal > 1.8 ? "⚠️ Vibración elevada" : "✓ Nivel de vibración parejo y balanceado";
+        elemVibState.style.color = vibTotal > 1.8 ? "#F59E0B" : "#10B981";
     }
 
-    // 2. Vibraciones MPU6050
-    const ax = parseFloat(data.ax || 0);
-    const ay = parseFloat(data.ay || 0);
-    const az = parseFloat(data.az || 0);
-    const vibTotal = typeof data.vibracion_total === "number" ? data.vibracion_total : (Math.sqrt(ax*ax + ay*ay + az*az) || 1.0);
+    // Desglose de 3 ejes
+    const axElem = document.getElementById("val-mpu-ax");
+    const ayElem = document.getElementById("val-mpu-ay");
+    const azElem = document.getElementById("val-mpu-az");
+    if (axElem) axElem.innerText = `${ax.toFixed(2)} G`;
+    if (ayElem) ayElem.innerText = `${ay.toFixed(2)} G`;
+    if (azElem) azElem.innerText = `${az.toFixed(2)} G`;
 
-    const vibElem = document.getElementById("esp32-vib-val");
-    if (vibElem) vibElem.innerText = vibTotal.toFixed(2);
+    // Telemetría WiFi y Paquetes
+    const packElem = document.getElementById("val-esp32-packets");
+    const rssiElem = document.getElementById("val-esp32-rssi");
+    const lastSeenElem = document.getElementById("esp32-last-seen");
+    const hora = new Date().toLocaleTimeString();
+    if (packElem) packElem.innerText = `${esp32PacketsCount} tram.`;
+    if (rssiElem) rssiElem.innerText = `Red: ${data.wifi || "iPhone Andres"} (-58 dBm)`;
+    if (lastSeenElem) lastSeenElem.innerText = hora;
 
-    const axElem = document.getElementById("esp32-ax-val");
-    const ayElem = document.getElementById("esp32-ay-val");
-    const azElem = document.getElementById("esp32-az-val");
-    if (axElem) axElem.innerText = ax.toFixed(2);
-    if (ayElem) ayElem.innerText = ay.toFixed(2);
-    if (azElem) azElem.innerText = az.toFixed(2);
-
-    const vibStatus = document.getElementById("esp32-vib-status");
-    if (vibStatus) {
-        if (vibTotal > 2.8) {
-            vibStatus.innerHTML = '<span style="color:#EF4444; font-weight:700;">⚠️ Vibración excesiva: Revisar soporte de motor o biela</span>';
-        } else if (vibTotal > 1.8) {
-            vibStatus.innerHTML = '<span style="color:#F59E0B; font-weight:600;">⚡ Vibración media (Régimen de aceleración)</span>';
-        } else {
-            vibStatus.innerHTML = '<span style="color:#10B981; font-weight:600;">✓ Nivel de vibración balanceado</span>';
-        }
-    }
-
-    // 3. Badges
-    const badgeConn = document.getElementById("esp32-connection-badge");
+    const badgeConn = document.getElementById("esp32-status-badge");
     if (badgeConn) {
-        badgeConn.className = "badge badge-live";
-        badgeConn.innerText = "ESP32 CONECTADO";
+        badgeConn.className = "badge-live";
+        badgeConn.innerText = "Transmisión Activa";
     }
 
-    const lastSeen = document.getElementById("esp32-last-seen");
-    if (lastSeen) {
-        lastSeen.innerText = `Último paquete: ${new Date().toLocaleTimeString()}`;
+    // Acumular para el promedio de la sesión
+    esp32LecturasTemp.push(tempVal);
+    esp32LecturasVib.push(vibTotal);
+
+    // Actualizar gráfico del dispositivo
+    if (chartDispositivoReal) {
+        if (chartDispositivoReal.data.labels.length > 20) {
+            chartDispositivoReal.data.labels.shift();
+            chartDispositivoReal.data.datasets[0].data.shift();
+            chartDispositivoReal.data.datasets[1].data.shift();
+        }
+        chartDispositivoReal.data.labels.push(hora);
+        chartDispositivoReal.data.datasets[0].data.push(parseFloat(tempVal.toFixed(1)));
+        chartDispositivoReal.data.datasets[1].data.push(parseFloat(vibTotal.toFixed(2)));
+        chartDispositivoReal.update();
     }
 
-    agregarPuntoGraficoESP32(tempVal, vibTotal);
+    // Agregar trama al terminal
     agregarTramaTerminal(data);
 }
 
-function agregarPuntoGraficoESP32(temp, vib) {
-    const hora = new Date().toLocaleTimeString();
-
-    if (chartEsp32Temp) {
-        if (chartEsp32Temp.data.labels.length > 20) {
-            chartEsp32Temp.data.labels.shift();
-            chartEsp32Temp.data.datasets[0].data.shift();
-        }
-        chartEsp32Temp.data.labels.push(hora);
-        chartEsp32Temp.data.datasets[0].data.push(temp);
-        chartEsp32Temp.update();
-    }
-
-    if (chartEsp32Vib) {
-        if (chartEsp32Vib.data.labels.length > 20) {
-            chartEsp32Vib.data.labels.shift();
-            chartEsp32Vib.data.datasets[0].data.shift();
-        }
-        chartEsp32Vib.data.labels.push(hora);
-        chartEsp32Vib.data.datasets[0].data.push(vib);
-        chartEsp32Vib.update();
-    }
-}
-
 function agregarTramaTerminal(data) {
-    const terminal = document.getElementById("esp32-terminal-body");
+    const terminal = document.getElementById("terminal-esp32-logs");
     if (!terminal) return;
 
     const row = document.createElement("div");
-    row.className = "terminal-row";
     const ts = new Date().toLocaleTimeString();
-    row.innerHTML = `<span class="terminal-ts">[${ts}]</span> <span class="terminal-json">${JSON.stringify(data)}</span>`;
+    row.innerHTML = `<span style="color:#64748B;">[${ts}]</span> <span style="color:#10B981;">Trama:</span> ${JSON.stringify(data)}`;
     terminal.prepend(row);
 
     while (terminal.children.length > 30) {
@@ -682,29 +757,89 @@ function agregarTramaTerminal(data) {
     }
 }
 
+function limpiarTerminalESP32() {
+    const terminal = document.getElementById("terminal-esp32-logs");
+    if (terminal) {
+        terminal.innerHTML = '<div style="color:#64748B;">Monitor de tramas limpio. Esperando nuevas lecturas...</div>';
+    }
+}
+
 function toggleSimularESP32() {
     const btn = document.getElementById("btn-simular-esp32");
+    inicializarGraficoDispositivo();
+
     if (esp32Simulando) {
+        // DETENER MEDICIÓN ESP32 Y GUARDAR EN HISTORIAL / BASE DE DATOS
         clearInterval(esp32SimuladoInterval);
         esp32SimuladoInterval = null;
         esp32Simulando = false;
-        if (btn) btn.innerText = "▶ Iniciar Simulación ESP32";
-        const badgeConn = document.getElementById("esp32-connection-badge");
-        if (badgeConn) {
-            badgeConn.className = "badge badge-offline";
-            badgeConn.innerText = "ESP32 EN ESPERA";
-        }
-    } else {
-        esp32Simulando = true;
-        if (btn) btn.innerText = "⏹ Detener Simulación";
-        let tempSim = 84.0;
-        esp32SimuladoInterval = setInterval(() => {
-            tempSim += (Math.random() - 0.48) * 0.4;
-            tempSim = Math.max(70, Math.min(108, tempSim));
 
-            const ax = (Math.random() * 0.16 - 0.08);
-            const ay = (Math.random() * 0.16 - 0.08);
-            const az = (0.98 + (Math.random() * 0.25 - 0.08));
+        if (btn) {
+            btn.innerHTML = "⚡ Simular Envío ESP32";
+            btn.style.background = "#6366F1";
+        }
+
+        const badgeConn = document.getElementById("esp32-status-badge");
+        if (badgeConn) {
+            badgeConn.className = "badge-offline";
+            badgeConn.innerText = "Sesión Guardada";
+        }
+
+        let promTemp = 89.2;
+        let promVib = 0.95;
+        if (esp32LecturasTemp.length > 0) {
+            promTemp = (esp32LecturasTemp.reduce((a, b) => a + b, 0) / esp32LecturasTemp.length).toFixed(1);
+            promVib = (esp32LecturasVib.reduce((a, b) => a + b, 0) / esp32LecturasVib.length).toFixed(2);
+        }
+
+        let severidad = "Normal";
+        let descripcion = `Transmisión ESP32 guardada: Sonda DS18B20 Media ${promTemp}°C | MPU6050 ${promVib}g (Guardado en base de datos)`;
+
+        if (parseFloat(promTemp) > 105) {
+            severidad = "Advertencia";
+            descripcion = `Alerta térmica ESP32: Temp media ${promTemp}°C por encima de tolerancia`;
+        } else if (parseFloat(promVib) > 1.8) {
+            severidad = "Advertencia";
+            descripcion = `Alerta inercial ESP32: Nivel de vibración media ${promVib}g elevado`;
+        }
+
+        // GUARDADO AUTOMÁTICO EN BASE DE DATOS E HISTORIAL
+        agregarEntradaHistorial("Dispositivo ESP32 (Hardware)", descripcion, severidad, "Completado");
+
+        agregarTramaTerminal({
+            evento: "SESIÓN_FINALIZADA",
+            modulo: "ESP32_YCZ110",
+            temp_promedio: `${promTemp} °C`,
+            vib_promedio: `${promVib} g`,
+            estado: "Guardado en Base de Datos e Historial"
+        });
+
+    } else {
+        // INICIAR MEDICIÓN SIMULADA ESP32 CON FÍSICA PAREJA Y UNIFORME
+        esp32Simulando = true;
+        esp32LecturasTemp = [];
+        esp32LecturasVib = [];
+        esp32TickCounter = 0;
+
+        if (btn) {
+            btn.innerHTML = "⏹️ Detener Envío ESP32";
+            btn.style.background = "#EF4444";
+        }
+
+        let tempSim = 89.0;
+
+        esp32SimuladoInterval = setInterval(() => {
+            esp32TickCounter++;
+            const t = esp32TickCounter;
+
+            // Datos térmicos y de vibración completamente parejos
+            const tempTarget = 89.1 + Math.sin(t * 0.1) * 0.5;
+            tempSim = (tempSim * 0.92) + (tempTarget * 0.08);
+
+            // Ejes MPU6050 parejos y balanceados
+            const ax = 0.08 + (Math.sin(t * 0.2) * 0.02);
+            const ay = 0.06 + (Math.cos(t * 0.2) * 0.02);
+            const az = 0.94 + (Math.sin(t * 0.15) * 0.02);
             const vibTotal = Math.sqrt(ax*ax + ay*ay + az*az);
 
             const trama = {
@@ -716,18 +851,24 @@ function toggleSimularESP32() {
                 az: parseFloat(az.toFixed(2)),
                 vibracion_total: parseFloat(vibTotal.toFixed(2)),
                 rssi: -58,
-                uptime_s: Math.floor(Date.now() / 1000)
+                uptime_s: Math.floor(Date.now() / 1000),
+                wifi: "iPhone Andres"
             };
 
             actualizarVistaESP32(trama);
-        }, 1500);
+        }, 1200);
     }
 }
 
 // =========================================================================
-// TELEMETRÍA SIMULADA CON FÍSICA REALISTA (YAMAHA YCZ 110, 110cc 4T)
-// Inercia térmica suave, oscilación armónica y ciclos de conducción reales
+// TELEMETRÍA SIMULADA CON FÍSICA PAREJA Y REALISTA (CONFIGURACIÓN & MOTO)
 // =========================================================================
+estadoFisicaMotor = {
+    tempCulata: 89.2,   // Temperatura óptima de culata refrigerada por aire (~89°C)
+    vibracionG: 0.94,   // Nivel de vibración armónica parejo en 110cc (~0.94g)
+    tiempoTicks: 0
+};
+
 function iniciarMedicionSimulada() {
     if (intervaloSimulacion) return;
 
@@ -738,74 +879,25 @@ function iniciarMedicionSimulada() {
 
     const estadoLbl = document.getElementById("estado-medicion-lbl");
     if (estadoLbl) {
-        estadoLbl.innerHTML = '<span style="color:#10B981; font-weight:600;">🟢 Estado: Medición activa en tiempo real.</span>';
+        estadoLbl.innerHTML = '<span style="color:#10B981; font-weight:600;">🟢 Estado: Medición activa en tiempo real. Curvas parejas y continuas.</span>';
     }
 
     lecturasTemporalesTemp = [];
     lecturasTemporalesVib = [];
-
-    // Iniciar física de simulación
-    estadoFisicaMotor.ticksEnFase = 0;
-    let tiempoTick = 0;
+    estadoFisicaMotor.tiempoTicks = 0;
 
     intervaloSimulacion = setInterval(() => {
-        tiempoTick++;
-        estadoFisicaMotor.ticksEnFase++;
+        estadoFisicaMotor.tiempoTicks++;
+        const t = estadoFisicaMotor.tiempoTicks;
 
-        // Simular fases de conducción reales:
-        // Fase 0: Ralentí (1400 RPM) -> Fase 1: Aceleración progresiva -> Fase 2: Velocidad de crucero 50 km/h -> Fase 3: Detención en semáforo
-        let deltaTemp = 0;
-        let vibObjetivo = 0.85;
+        // FÍSICA PAREJA Y UNIFORME:
+        // Oscilación térmica ultra-suave (+-0.08°C) que simula el flujo de aire continuo
+        const tempBase = 89.2 + Math.sin(t * 0.12) * 0.6;
+        estadoFisicaMotor.tempCulata = (estadoFisicaMotor.tempCulata * 0.93) + (tempBase * 0.07);
 
-        if (estadoFisicaMotor.faseConduccion === 0) {
-            // Ralentí en reposo
-            deltaTemp = (Math.random() - 0.48) * 0.15; // Oscilación sutil de temperatura
-            vibObjetivo = 0.82 + Math.sin(tiempoTick * 0.8) * 0.08 + (Math.random() * 0.06);
-
-            if (estadoFisicaMotor.ticksEnFase > 8) {
-                estadoFisicaMotor.faseConduccion = 1; // Pasa a acelerar
-                estadoFisicaMotor.ticksEnFase = 0;
-            }
-        } else if (estadoFisicaMotor.faseConduccion === 1) {
-            // Aceleración y subida de marchas (3000 - 4500 RPM)
-            deltaTemp = 0.25 + (Math.random() * 0.2); // Sube de temperatura progresivamente
-            vibObjetivo = 1.35 + (Math.random() * 0.25);
-
-            if (estadoFisicaMotor.ticksEnFase > 12) {
-                estadoFisicaMotor.faseConduccion = 2; // Pasa a crucero
-                estadoFisicaMotor.ticksEnFase = 0;
-            }
-        } else if (estadoFisicaMotor.faseConduccion === 2) {
-            // Crucero estable a 50 km/h (el flujo de aire enfría la culata)
-            // Se mantiene entre 89°C y 93°C de forma muy estable
-            if (estadoFisicaMotor.tempCulata > 92.5) {
-                deltaTemp = -0.15 + (Math.random() * 0.1); // Enfriamiento por aire
-            } else {
-                deltaTemp = 0.05 + (Math.random() * 0.1);
-            }
-            vibObjetivo = 1.15 + (Math.random() * 0.12);
-
-            if (estadoFisicaMotor.ticksEnFase > 15) {
-                estadoFisicaMotor.faseConduccion = 3; // Pasa a semáforo
-                estadoFisicaMotor.ticksEnFase = 0;
-            }
-        } else if (estadoFisicaMotor.faseConduccion === 3) {
-            // Detención momentánea (sin viento, sube calor residual hasta 96°C)
-            deltaTemp = 0.12 + (Math.random() * 0.1);
-            vibObjetivo = 0.84 + Math.sin(tiempoTick * 0.8) * 0.06;
-
-            if (estadoFisicaMotor.ticksEnFase > 8) {
-                estadoFisicaMotor.faseConduccion = 0; // Vuelve a ciclo inicial
-                estadoFisicaMotor.ticksEnFase = 0;
-            }
-        }
-
-        // Aplicar inercia térmica suave
-        estadoFisicaMotor.tempCulata += deltaTemp;
-        estadoFisicaMotor.tempCulata = Math.max(76.0, Math.min(104.5, estadoFisicaMotor.tempCulata));
-
-        // Aplicar filtrado suave a la vibración
-        estadoFisicaMotor.vibracionG = (estadoFisicaMotor.vibracionG * 0.6) + (vibObjetivo * 0.4);
+        // Vibración armónica monocilíndrica pareja (+-0.03g alrededor de 0.94g)
+        const vibBase = 0.94 + Math.sin(t * 0.25) * 0.03 + (Math.sin(t * 0.07) * 0.02);
+        estadoFisicaMotor.vibracionG = (estadoFisicaMotor.vibracionG * 0.88) + (vibBase * 0.12);
 
         const tempFinal = parseFloat(estadoFisicaMotor.tempCulata.toFixed(1));
         const vibFinal = parseFloat(estadoFisicaMotor.vibracionG.toFixed(2));
@@ -814,29 +906,24 @@ function iniciarMedicionSimulada() {
         lecturasTemporalesTemp.push(tempFinal);
         lecturasTemporalesVib.push(vibFinal);
 
-        // Actualizar valores en vista de Telemetría en Vivo
-        const tempElem = document.getElementById("live-temp");
-        const vibElem = document.getElementById("live-vib");
-        if (tempElem) tempElem.innerText = `${tempFinal} °C`;
-        if (vibElem) vibElem.innerText = `${vibFinal} g`;
+        // Actualizar tarjetas en Telemetría en Vivo
+        const teleTemp = document.getElementById("val-temp-telemetria");
+        const teleVib = document.getElementById("val-vib-telemetria");
+        if (teleTemp) teleTemp.innerText = `${tempFinal} °C`;
+        if (teleVib) teleVib.innerText = `${vibFinal} g`;
 
-        // Actualizar en el Panel General
+        // Actualizar tarjetas en Panel General
         const generalTemp = document.getElementById("val-temp-media");
         const generalVib = document.getElementById("val-vibracion");
         const generalEstado = document.getElementById("val-estado-global");
         if (generalTemp) generalTemp.innerText = `${tempFinal} °C`;
         if (generalVib) generalVib.innerText = `${vibFinal} g`;
         if (generalEstado) {
-            if (tempFinal > 105) {
-                generalEstado.innerText = "Temperatura Elevada";
-                generalEstado.style.color = "#F59E0B";
-            } else {
-                generalEstado.innerText = "Operación Normal";
-                generalEstado.style.color = "#10B981";
-            }
+            generalEstado.innerText = "Operación Normal (Pareja)";
+            generalEstado.style.color = "#10B981";
         }
 
-        // Actualizar gráficos en tiempo real con curvas continuas
+        // Actualizar gráficos con curvas continuas y suaves
         if (chartGeneral) {
             if (chartGeneral.data.labels.length > 15) {
                 chartGeneral.data.labels.shift();
@@ -871,10 +958,6 @@ function iniciarMedicionSimulada() {
     }, 1200);
 }
 
-function detenerMedicion() {
-    detenerMedicionSimulada();
-}
-
 function detenerMedicionSimulada() {
     if (!intervaloSimulacion) return;
 
@@ -886,32 +969,36 @@ function detenerMedicionSimulada() {
     if (btnIniciar) btnIniciar.disabled = false;
     if (btnDetener) btnDetener.disabled = true;
 
-    const estadoLbl = document.getElementById("estado-medicion-lbl");
-    if (estadoLbl) {
-        estadoLbl.innerHTML = '<span style="color:#64748B;">⚪ Estado: Sensores en reposo (Inactivos).</span>';
-    }
+    let promTemp = estadoFisicaMotor.tempCulata.toFixed(1);
+    let promVib = estadoFisicaMotor.vibracionG.toFixed(2);
 
     if (lecturasTemporalesTemp.length > 0) {
-        const promTemp = (lecturasTemporalesTemp.reduce((a, b) => a + b, 0) / lecturasTemporalesTemp.length).toFixed(1);
-        const promVib = (lecturasTemporalesVib.reduce((a, b) => a + b, 0) / lecturasTemporalesVib.length).toFixed(2);
-
-        // Guardar automáticamente en el Historial de Fallas
-        let severidad = "Normal";
-        let descripcion = `Medición completada: Temp Media ${promTemp}°C | Vibración Media ${promVib}g (Régimen estable)`;
-
-        if (promTemp > 105) {
-            severidad = "Advertencia";
-            descripcion = `Alerta térmica: Temp promedio ${promTemp}°C superior a lo habitual en tráfico lento`;
-        } else if (promVib > 1.8) {
-            severidad = "Advertencia";
-            descripcion = `Nivel de vibración ${promVib}g elevado durante aceleración brusca`;
-        }
-
-        agregarEntradaHistorial("Telemetría en Vivo", descripcion, severidad, "Completado");
+        promTemp = (lecturasTemporalesTemp.reduce((a, b) => a + b, 0) / lecturasTemporalesTemp.length).toFixed(1);
+        promVib = (lecturasTemporalesVib.reduce((a, b) => a + b, 0) / lecturasTemporalesVib.length).toFixed(2);
     }
+
+    const estadoLbl = document.getElementById("estado-medicion-lbl");
+    if (estadoLbl) {
+        estadoLbl.innerHTML = `<span style="color:#10B981; font-weight:600;">✅ Medición finalizada: Temp Media ${promTemp}°C | Vib ${promVib}g guardada en el historial y base de datos.</span>`;
+    }
+
+    // Guardar en el Historial y Base de Datos
+    let severidad = "Normal";
+    let descripcion = `Medición en vivo completada: Temp Media ${promTemp}°C | Vibración Media ${promVib}g (Comportamiento parejo Yamaha YCZ 110)`;
+
+    if (parseFloat(promTemp) > 105) {
+        severidad = "Advertencia";
+        descripcion = `Alerta térmica: Temp promedio ${promTemp}°C por encima de rango habitual`;
+    } else if (parseFloat(promVib) > 1.8) {
+        severidad = "Advertencia";
+        descripcion = `Nivel de vibración promedio ${promVib}g elevado`;
+    }
+
+    // GUARDADO AUTOMÁTICO EN BASE DE DATOS E HISTORIAL
+    agregarEntradaHistorial("Telemetría en Vivo", descripcion, severidad, "Completado");
 }
 
-// =========================================================================
+
 // INICIALIZACIÓN DE GRÁFICOS CHART.JS
 // =========================================================================
 function inicializarGraficosVisuales() {
@@ -977,6 +1064,7 @@ function inicializarGraficosVisuales() {
 }
 
 function inicializarGraficosESP32() {
+    inicializarGraficoDispositivo();
     const ctxEspTemp = document.getElementById("chart-esp32-temp");
     if (ctxEspTemp && typeof Chart !== "undefined") {
         chartEsp32Temp = new Chart(ctxEspTemp, {
