@@ -3,9 +3,9 @@
 // Yamaha YCZ 110 - Sistema de Diagnóstico Inteligente
 // =========================================================================
 
-// Íconos SVG para toggles de contraseñas
-const ICON_EYE_OPEN = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
-const ICON_EYE_CLOSED = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+// Íconos SVG para mostrar / ocultar contraseña
+const ICON_EYE_OPEN = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+const ICON_EYE_CLOSED = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
 
 // Variables de estado de simulación existente
 let intervaloSimulacion = null;
@@ -28,69 +28,58 @@ let usuarioActualAuth = null;
 let unsubscribeUserStatus = null;
 
 // =========================================================================
-// CONFIGURACIÓN DE FIREBASE
-// Puedes ingresar tus credenciales aquí o en la interfaz
+// CONFIGURACIÓN OFICIAL DE FIREBASE (PROPORCIONADA POR EL USUARIO)
 // =========================================================================
 const defaultFirebaseConfig = {
-    apiKey: "AIzaSy_CONFIGURA_TU_API_KEY_AQUI",
-    authDomain: "motodiag-telemetria.firebaseapp.com",
-    databaseURL: "https://motodiag-telemetria-default-rtdb.firebaseio.com",
-    projectId: "motodiag-telemetria",
-    storageBucket: "motodiag-telemetria.appspot.com",
-    messagingSenderId: "1234567890",
-    appId: "1:1234567890:web:abcdef123456"
+    apiKey: "AIzaSyCpAyag547_IB4vZZNldfmiS9X1Z6O8kII",
+    authDomain: "motodiag-e6676.firebaseapp.com",
+    projectId: "motodiag-e6676",
+    storageBucket: "motodiag-e6676.firebasestorage.app",
+    messagingSenderId: "493156491098",
+    appId: "1:493156491098:web:113961dbdfab5e24f49d63",
+    databaseURL: "https://motodiag-e6676-default-rtdb.firebaseio.com"
 };
-
-// Cargar configuración guardada en localStorage si existe
-function getFirebaseConfig() {
-    const custom = localStorage.getItem("motoDiag_firebase_config");
-    if (custom) {
-        try { return JSON.parse(custom); } catch(e){}
-    }
-    return defaultFirebaseConfig;
-}
 
 let firebaseInicializado = false;
 let auth = null;
-let db = null;     // Firestore
-let rtdb = null;   // Realtime Database
+let db = null;     // Firestore Database (Aprobaciones de usuario)
+let rtdb = null;   // Realtime Database (Telemetría ESP32)
 
 function inicializarFirebase() {
     if (typeof firebase === "undefined") {
-        console.warn("SDK de Firebase no detectado en ventana.");
+        console.warn("SDK de Firebase Compat no detectado.");
         return;
     }
     try {
-        const cfg = getFirebaseConfig();
         if (!firebase.apps.length) {
-            firebase.initializeApp(cfg);
+            firebase.initializeApp(defaultFirebaseConfig);
         }
         auth = firebase.auth();
         db = firebase.firestore();
         rtdb = firebase.database();
         firebaseInicializado = true;
-        console.log("Firebase inicializado correctamente.");
+        console.log("Firebase conectado exitosamente con proyecto:", defaultFirebaseConfig.projectId);
 
-        // Escuchar cambios de autenticación
         auth.onAuthStateChanged(manejarCambioAuth);
     } catch (err) {
-        console.warn("Firebase no configurado aún o claves pendientes:", err.message);
+        console.warn("Aviso al inicializar Firebase:", err.message);
     }
 }
 
 // =========================================================================
-// CICLO DE VIDA INICIAL
+// INICIALIZACIÓN AL CARGAR EL DOM
 // =========================================================================
 document.addEventListener("DOMContentLoaded", () => {
+    // Configurar íconos en los botones de ojo de contraseña
     document.querySelectorAll('.toggle-password').forEach(btn => {
         btn.innerHTML = ICON_EYE_OPEN;
     });
 
     inicializarFirebase();
 
-    // Si no está usando Firebase o está en modo offline guardado
+    // Comprobar si hay usuario guardado previamente
     const savedUser = localStorage.getItem("motoDiagUser");
-    if (savedUser && (!firebaseInicializado || !auth.currentUser)) {
+    if (savedUser) {
         cargarPerfilUsuario(savedUser);
     }
 
@@ -99,7 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // =========================================================================
-// CONTROL DE VISIBILIDAD DE CONTRASEÑA Y FORMULARIOS
+// VISIBILIDAD DE CONTRASEÑA Y FORMULARIOS
 // =========================================================================
 function togglePasswordVisibility(inputId, buttonElement) {
     const inputField = document.getElementById(inputId);
@@ -127,7 +116,7 @@ function handleEnter(event, type) {
 }
 
 // =========================================================================
-// FLUJO DE AUTENTICACIÓN Y APROBACIÓN POR ADMINISTRADOR
+// FLUJO DE AUTENTICACIÓN Y APROBACIÓN DE USUARIOS
 // =========================================================================
 
 /**
@@ -135,8 +124,9 @@ function handleEnter(event, type) {
  */
 async function iniciarSesionConGoogle() {
     if (!firebaseInicializado || !auth) {
-        alert("Configuración de Firebase pendiente.\n\nPor favor ingresa las credenciales de Firebase en la sección de configuración o revisa el archivo GUIA_FIREBASE.md para activar Google Sign-In.");
-        return;
+        alert("Iniciando Firebase... Si estás en pruebas locales, verifica tu conexión a internet.");
+        inicializarFirebase();
+        if (!auth) return;
     }
 
     try {
@@ -148,26 +138,28 @@ async function iniciarSesionConGoogle() {
     } catch (error) {
         console.error("Error en Google Sign-In:", error);
         if (error.code === "auth/popup-closed-by-user") return;
-        alert("Error al iniciar sesión con Google: " + error.message);
+        if (error.code === "auth/unauthorized-domain") {
+            alert("Dominio no autorizado en Firebase: debes agregar tu URL de Vercel en la consola de Firebase (Authentication > Settings > Authorized Domains).");
+            return;
+        }
+        alert("Error al iniciar con Google: " + error.message);
     }
 }
 
 /**
- * 2. INICIAR SESIÓN CON CORREO Y CONTRASEÑA
+ * 2. INICIAR SESIÓN CON USUARIO/CORREO Y CONTRASEÑA
  */
 async function iniciarSesion() {
     const usuarioOCorreo = document.getElementById("login-user").value.trim();
     const contrasena = document.getElementById("login-pass").value.trim();
 
     if (!usuarioOCorreo || !contrasena) {
-        alert("Por favor completa tu usuario/correo y contraseña.");
+        alert("Por favor completa tu usuario o correo y tu contraseña.");
         return;
     }
 
-    // Si Firebase está activo
     if (firebaseInicializado && auth) {
         try {
-            // Si el usuario no ingresó un correo con @, sugerimos o autocompletamos
             let emailFinal = usuarioOCorreo;
             if (!usuarioOCorreo.includes("@")) {
                 emailFinal = usuarioOCorreo.toLowerCase() + "@motodiag.app";
@@ -179,25 +171,25 @@ async function iniciarSesion() {
         } catch (error) {
             console.warn("Fallo autenticación Firebase:", error.code);
             if (error.code === "auth/user-not-found" || error.code === "auth/wrong-password" || error.code === "auth/invalid-credential") {
-                alert("Credenciales incorrectas o usuario no registrado.");
+                alert("Usuario o contraseña incorrectos en Firebase.");
                 return;
             }
         }
     }
 
-    // Modo compatibilidad local (offline sin Firebase configurado)
+    // Modo local offline de respaldo
     const usuariosRegistrados = JSON.parse(localStorage.getItem("motoDiag_registered_users")) || {};
     if (usuariosRegistrados[usuarioOCorreo] && usuariosRegistrados[usuarioOCorreo].password === contrasena) {
         cargarPerfilUsuario(usuarioOCorreo);
     } else if (usuarioOCorreo === "admin" && contrasena === "1234") {
         cargarPerfilUsuario("admin");
     } else {
-        alert("Usuario o contraseña incorrectos. Si acabas de registrarte en Firebase, verifica tus datos.");
+        alert("Credenciales incorrectas. Si tu cuenta es nueva en Firebase, asegúrate de haber sido aprobado.");
     }
 }
 
 /**
- * 3. REGISTRO DE NUEVO USUARIO (CON ASIGNACIÓN DE ESTADO 'pending')
+ * 3. SOLICITUD DE REGISTRO DE USUARIO (ESTADO POR DEFECTO: 'pending')
  */
 async function registrarUsuario() {
     const regUser = document.getElementById("reg-user").value.trim();
@@ -208,16 +200,15 @@ async function registrarUsuario() {
     const anio = document.getElementById("reg-moto-anio").value.trim() || "2024";
 
     if (!regUser || !regPass) {
-        alert("Por favor ingresa un nombre de usuario/correo y una contraseña.");
+        alert("Por favor ingresa un correo o nombre de usuario y una contraseña.");
         return;
     }
 
     if (regPass.length < 6) {
-        alert("La contraseña debe tener al menos 6 caracteres.");
+        alert("La contraseña debe tener un mínimo de 6 caracteres.");
         return;
     }
 
-    // Si Firebase está activo
     if (firebaseInicializado && auth && db) {
         try {
             let emailFinal = regUser;
@@ -228,30 +219,26 @@ async function registrarUsuario() {
             const cred = await auth.createUserWithEmailAndPassword(emailFinal, regPass);
             const user = cred.user;
 
-            // Actualizar display name
             await user.updateProfile({ displayName: regUser.split("@")[0] });
 
-            // Registrar en Firestore con status: 'pending'
+            // Registrar en Firestore con status: 'pending' (Sólo tú apruebas en la consola)
             await db.collection("users").doc(user.uid).set({
                 uid: user.uid,
                 email: user.email,
                 displayName: regUser.split("@")[0],
-                status: "pending", // <--- Bloqueado hasta aprobación del admin
+                status: "pending",
                 rol: "usuario",
                 moto: { marca, modelo, cilindraje, anio },
-                fechaSolicitud: firebase.firestore.FieldValue.serverTimestamp(),
                 creadoEn: new Date().toISOString()
             });
 
-            // Guardar configuración de moto local
-            guardarDatosMotoLocal({ marca, modelo, cilindraje, anio });
-
+            guardarDatosMotoLocal(regUser.split("@")[0], { marca, modelo, cilindraje, anio });
             mostrarPantallaPendiente(user);
             return;
         } catch (error) {
-            console.error("Error al registrar en Firebase:", error);
+            console.error("Error en registro Firebase:", error);
             if (error.code === "auth/email-already-in-use") {
-                alert("Este correo o usuario ya se encuentra registrado. Inicia sesión o recupera tu contraseña.");
+                alert("Este correo ya está registrado en Firebase. Por favor inicia sesión.");
                 switchAuthForm("form-login");
                 return;
             }
@@ -260,7 +247,7 @@ async function registrarUsuario() {
         }
     }
 
-    // Modo local offline
+    // Registro offline fallback
     let usuariosRegistrados = JSON.parse(localStorage.getItem("motoDiag_registered_users")) || {};
     usuariosRegistrados[regUser] = {
         password: regPass,
@@ -268,19 +255,18 @@ async function registrarUsuario() {
         status: "approved"
     };
     localStorage.setItem("motoDiag_registered_users", JSON.stringify(usuariosRegistrados));
-    guardarDatosMotoLocal({ marca, modelo, cilindraje, anio });
+    guardarDatosMotoLocal(regUser, { marca, modelo, cilindraje, anio });
     alert("Usuario registrado localmente con éxito.");
     cargarPerfilUsuario(regUser);
 }
 
 /**
- * 4. PROCESAR USUARIO AUTENTICADO Y COMPROBAR SU ESTADO DE APROBACIÓN
+ * 4. PROCESAR USUARIO AUTENTICADO Y COMPROBAR STATUS ('approved' vs 'pending')
  */
 async function procesarUsuarioAutenticado(user, proveedor) {
     usuarioActualAuth = user;
 
     if (!db) {
-        // Sin base de datos Firestore, permitir acceso directo
         cargarPerfilUsuario(user.displayName || user.email);
         return;
     }
@@ -290,22 +276,16 @@ async function procesarUsuarioAutenticado(user, proveedor) {
         const docSnap = await userDocRef.get();
 
         if (!docSnap.exists) {
-            // Usuario nuevo que entra por Google por primera vez -> Se registra como 'pending'
+            // Usuario entra con Google por primera vez -> Asignar status: 'pending'
             const nuevoRegistro = {
                 uid: user.uid,
                 email: user.email,
                 displayName: user.displayName || user.email.split("@")[0],
                 foto: user.photoURL || "",
-                status: "pending", // <--- Solo tú puedes cambiarlo a 'approved' en la consola
+                status: "pending", // <--- Bloqueado hasta aprobación del Administrador
                 rol: "usuario",
                 proveedor: proveedor,
-                moto: {
-                    marca: "Yamaha",
-                    modelo: "YCZ",
-                    cilindraje: "110cc",
-                    anio: "2024"
-                },
-                fechaSolicitud: firebase.firestore.FieldValue.serverTimestamp(),
+                moto: { marca: "Yamaha", modelo: "YCZ", cilindraje: "110cc", anio: "2024" },
                 creadoEn: new Date().toISOString()
             };
             await userDocRef.set(nuevoRegistro);
@@ -316,50 +296,49 @@ async function procesarUsuarioAutenticado(user, proveedor) {
 
         const data = docSnap.data();
 
-        // VALIDACIÓN EXHAUSTIVA DE ESTADO DE APROBACIÓN:
         if (data.status === "approved" || data.rol === "admin") {
-            // APROBADO: Acceso completo
+            // USUARIO ADMITIDO
             if (unsubscribeUserStatus) unsubscribeUserStatus();
             cargarPerfilUsuario(data.displayName || user.displayName || user.email);
-            if (data.moto) guardarDatosMotoLocal(data.moto);
+            if (data.moto) guardarDatosMotoLocal(data.displayName || user.displayName, data.moto);
             conectarTelemetriaESP32();
         } else if (data.status === "rejected") {
-            alert("Tu solicitud de acceso ha sido denegada por el Administrador.");
+            alert("Tu solicitud de acceso ha sido rechazada por el Administrador.");
             cerrarSesion();
         } else {
-            // ESTADO: 'pending'
+            // USUARIO PENDIENTE
             mostrarPantallaPendiente(user);
             activarEscuchaAprobacionEnTiempoReal(user.uid);
         }
     } catch (err) {
-        console.error("Error al verificar estado de usuario en Firestore:", err);
-        // Fallback defensivo
+        console.error("Error al consultar status en Firestore:", err);
         mostrarPantallaPendiente(user);
     }
 }
 
-/**
- * Muestra la pantalla visual de espera de aprobación
- */
 function mostrarPantallaPendiente(user) {
-    document.getElementById("auth-modal").classList.remove("hidden");
-    document.getElementById("app-container").classList.remove("active");
+    const loginScreen = document.getElementById("login-screen");
+    const appContainer = document.getElementById("app-container");
+    const chatWidget = document.getElementById("chatWidget");
 
-    const forms = document.querySelectorAll('.auth-form');
-    forms.forEach(form => form.classList.remove('active-form'));
-
-    const pendingScreen = document.getElementById("screen-pending-approval");
-    if (pendingScreen) {
-        pendingScreen.classList.add("active-form");
-        document.getElementById("pending-user-name").innerText = user.displayName || user.email.split("@")[0];
-        document.getElementById("pending-user-email").innerText = user.email;
-        document.getElementById("pending-user-uid").innerText = user.uid;
+    if (appContainer) appContainer.style.display = "none";
+    if (chatWidget) chatWidget.style.display = "none";
+    if (loginScreen) {
+        loginScreen.style.display = "flex";
+        loginScreen.style.opacity = "1";
     }
+
+    switchAuthForm("screen-pending-approval");
+
+    const pName = document.getElementById("pending-user-name");
+    const pEmail = document.getElementById("pending-user-email");
+    const pUid = document.getElementById("pending-user-uid");
+
+    if (pName) pName.innerText = user.displayName || user.email.split("@")[0];
+    if (pEmail) pEmail.innerText = user.email;
+    if (pUid) pUid.innerText = user.uid;
 }
 
-/**
- * Escucha en tiempo real si el Administrador cambia el campo status a 'approved' en Firebase
- */
 function activarEscuchaAprobacionEnTiempoReal(uid) {
     if (!db) return;
     if (unsubscribeUserStatus) unsubscribeUserStatus();
@@ -368,32 +347,23 @@ function activarEscuchaAprobacionEnTiempoReal(uid) {
         if (snapshot.exists) {
             const data = snapshot.data();
             if (data.status === "approved" || data.rol === "admin") {
-                console.log("¡El usuario ha sido aprobado en tiempo real por el Administrador!");
                 if (unsubscribeUserStatus) {
                     unsubscribeUserStatus();
                     unsubscribeUserStatus = null;
                 }
                 alert("¡Felicidades! Tu cuenta ha sido aprobada por el Administrador.");
                 cargarPerfilUsuario(data.displayName || usuarioActualAuth.displayName || usuarioActualAuth.email);
-                if (data.moto) guardarDatosMotoLocal(data.moto);
+                if (data.moto) guardarDatosMotoLocal(data.displayName || usuarioActualAuth.displayName, data.moto);
                 conectarTelemetriaESP32();
             }
         }
-    }, err => {
-        console.warn("Aviso en listener de aprobación:", err.message);
-    });
+    }, err => console.warn("Listener Firestore:", err.message));
 }
 
-/**
- * Botón 'Comprobar Si Ya Fui Aprobado'
- */
 async function verificarEstadoAprobacion() {
-    if (!usuarioActualAuth && auth) {
-        usuarioActualAuth = auth.currentUser;
-    }
-
+    if (!usuarioActualAuth && auth) usuarioActualAuth = auth.currentUser;
     if (!usuarioActualAuth || !db) {
-        alert("Verificando... Si el Administrador ya cambió tu estado en la consola a 'approved', recarga la página o vuelve a ingresar.");
+        alert("Comprobando... Si ya te aprobaron en la consola, recarga la página.");
         return;
     }
 
@@ -404,10 +374,10 @@ async function verificarEstadoAprobacion() {
             if (data.status === "approved" || data.rol === "admin") {
                 alert("¡Excelente! Tu cuenta ya figura como APROBADA en Firebase.");
                 cargarPerfilUsuario(data.displayName || usuarioActualAuth.displayName || usuarioActualAuth.email);
-                if (data.moto) guardarDatosMotoLocal(data.moto);
+                if (data.moto) guardarDatosMotoLocal(data.displayName || usuarioActualAuth.displayName, data.moto);
                 conectarTelemetriaESP32();
             } else {
-                alert("Tu estado actual sigue siendo: '" + (data.status || "pending") + "'.\n\nEl administrador debe ingresar a Firebase Console > Firestore > colección 'users' y cambiar el campo 'status' a 'approved'.");
+                alert("Tu estado actual sigue siendo: '" + (data.status || "pending") + "'.\n\nEl administrador debe cambiar el campo status a 'approved' en la consola de Firebase.");
             }
         }
     } catch (e) {
@@ -418,13 +388,13 @@ async function verificarEstadoAprobacion() {
 function cambiarContrasena() {
     const userOrEmail = document.getElementById("rec-user").value.trim();
     if (!userOrEmail) {
-        alert("Por favor ingresa tu correo para enviarte el enlace de restablecimiento.");
+        alert("Por favor ingresa tu correo electrónico.");
         return;
     }
 
     if (firebaseInicializado && auth && userOrEmail.includes("@")) {
         auth.sendPasswordResetEmail(userOrEmail).then(() => {
-            alert("Se ha enviado un correo a " + userOrEmail + " con instrucciones para restablecer tu contraseña.");
+            alert("Se ha enviado un correo a " + userOrEmail + " para restablecer tu contraseña.");
             switchAuthForm("form-login");
         }).catch(err => {
             alert("Error al enviar correo de recuperación: " + err.message);
@@ -432,7 +402,7 @@ function cambiarContrasena() {
         return;
     }
 
-    alert("Si usas correo y contraseña en Firebase, ingresa un correo válido para enviarte el enlace.");
+    alert("Ingresa un correo electrónico válido registrado en Firebase.");
 }
 
 function cerrarSesion() {
@@ -440,7 +410,10 @@ function cerrarSesion() {
         unsubscribeUserStatus();
         unsubscribeUserStatus = null;
     }
-
+    if (intervaloSimulacion) {
+        clearInterval(intervaloSimulacion);
+        intervaloSimulacion = null;
+    }
     if (auth) {
         auth.signOut().catch(() => {});
     }
@@ -448,9 +421,18 @@ function cerrarSesion() {
     localStorage.removeItem("motoDiagUser");
     usuarioActualAuth = null;
 
-    document.getElementById("auth-modal").classList.remove("hidden");
-    document.getElementById("app-container").classList.remove("active");
-    switchAuthForm("form-login");
+    const loginScreen = document.getElementById("login-screen");
+    const appContainer = document.getElementById("app-container");
+    const chatWidget = document.getElementById("chatWidget");
+
+    if (appContainer) appContainer.style.display = "none";
+    if (chatWidget) chatWidget.style.display = "none";
+    if (loginScreen) {
+        loginScreen.style.display = "flex";
+        loginScreen.style.opacity = "1";
+    }
+
+    switchAuthForm('form-login');
 }
 
 function manejarCambioAuth(user) {
@@ -459,29 +441,54 @@ function manejarCambioAuth(user) {
     } else {
         const savedUser = localStorage.getItem("motoDiagUser");
         if (!savedUser) {
-            document.getElementById("auth-modal").classList.remove("hidden");
-            document.getElementById("app-container").classList.remove("active");
+            const loginScreen = document.getElementById("login-screen");
+            const appContainer = document.getElementById("app-container");
+            if (appContainer) appContainer.style.display = "none";
+            if (loginScreen) {
+                loginScreen.style.display = "flex";
+                loginScreen.style.opacity = "1";
+            }
         }
     }
 }
 
 function cargarPerfilUsuario(nombreUsuario) {
     localStorage.setItem("motoDiagUser", nombreUsuario);
-    document.getElementById("user-display").innerText = nombreUsuario;
-    document.getElementById("auth-modal").classList.add("hidden");
-    document.getElementById("app-container").classList.add("active");
-    cargarDatosMoto();
+
+    const loginScreen = document.getElementById("login-screen");
+    const appContainer = document.getElementById("app-container");
+    const chatWidget = document.getElementById("chatWidget");
+
+    if (loginScreen) {
+        loginScreen.style.opacity = "0";
+        setTimeout(() => {
+            loginScreen.style.display = "none";
+            if (appContainer) appContainer.style.display = "flex";
+            if (chatWidget) chatWidget.style.display = "flex";
+        }, 300);
+    } else {
+        if (appContainer) appContainer.style.display = "flex";
+        if (chatWidget) chatWidget.style.display = "flex";
+    }
+
+    const displayUser = document.getElementById("display-username");
+    if (displayUser) displayUser.innerText = nombreUsuario;
+
+    cargarDatosMoto(nombreUsuario);
 }
 
 // =========================================================================
-// GESTIÓN DE CONFIGURACIÓN DE LA MOTOCICLETA (YAMAHA YCZ 110)
+// CONFIGURACIÓN DE LA MOTOCICLETA (YAMAHA YCZ 110)
 // =========================================================================
-function guardarDatosMotoLocal(moto) {
+function guardarDatosMotoLocal(username, moto) {
+    const key = username ? "motoDiag_moto_" + username : "motoDiag_moto_data";
+    localStorage.setItem(key, JSON.stringify(moto));
     localStorage.setItem("motoDiag_moto_data", JSON.stringify(moto));
 }
 
-function cargarDatosMoto() {
-    const saved = localStorage.getItem("motoDiag_moto_data");
+function cargarDatosMoto(username) {
+    const user = username || localStorage.getItem("motoDiagUser") || "default";
+    const saved = localStorage.getItem("motoDiag_moto_" + user) || localStorage.getItem("motoDiag_moto_data");
     let motoData = {
         marca: "Yamaha",
         modelo: "YCZ",
@@ -507,17 +514,23 @@ function cargarDatosMoto() {
     if (bannerDesc) {
         bannerDesc.innerText = `${motoData.marca} ${motoData.modelo} (${motoData.cilindraje} - ${motoData.anio})`;
     }
+
+    const displayMoto = document.getElementById("display-user-moto");
+    if (displayMoto) {
+        displayMoto.innerText = `${motoData.marca} ${motoData.modelo} (${motoData.cilindraje})`;
+    }
 }
 
 function guardarDatosMoto() {
+    const user = localStorage.getItem("motoDiagUser") || "default";
     const motoData = {
         marca: document.getElementById("moto-marca").value.trim() || "Yamaha",
         modelo: document.getElementById("moto-modelo").value.trim() || "YCZ",
         cilindraje: document.getElementById("moto-cilindraje").value.trim() || "110cc",
         anio: document.getElementById("moto-anio").value.trim() || "2024"
     };
-    guardarDatosMotoLocal(motoData);
-    cargarDatosMoto();
+    guardarDatosMotoLocal(user, motoData);
+    cargarDatosMoto(user);
     alert("¡Datos de la motocicleta guardados correctamente!");
 }
 
@@ -542,27 +555,24 @@ function switchView(viewName, element) {
 }
 
 // =========================================================================
-// MÓDULO DISPOSITIVO ESP32 - TELEMETRÍA EN TIEMPO REAL
-// (DS18B20 en GPIO 4 + MPU6050 en GPIO 21/22 - Yamaha YCZ 110)
+// MÓDULO DISPOSITIVO ESP32 (DS18B20 + MPU6050 + FIREBASE RTDB)
 // =========================================================================
 let rtdbListenerActivo = false;
 
 function conectarTelemetriaESP32() {
-    if (!rtdb) return;
-    if (rtdbListenerActivo) return;
+    if (!rtdb || rtdbListenerActivo) return;
 
     try {
         const liveRef = rtdb.ref("dispositivo/live");
         liveRef.on("value", snapshot => {
             if (snapshot.exists()) {
-                const data = snapshot.val();
-                actualizarVistaESP32(data);
+                actualizarVistaESP32(snapshot.val());
             }
         });
         rtdbListenerActivo = true;
         console.log("Conectado a Firebase Realtime Database para telemetría ESP32.");
     } catch (err) {
-        console.warn("No se pudo conectar a Realtime Database:", err.message);
+        console.warn("Realtime Database listener:", err.message);
     }
 }
 
@@ -577,16 +587,9 @@ function actualizarVistaESP32(data) {
 
     const tempFill = document.getElementById("esp32-temp-fill");
     if (tempFill) {
-        // Rango útil 20C a 130C
         const pct = Math.min(100, Math.max(0, ((tempVal - 20) / (130 - 20)) * 100));
         tempFill.style.width = pct + "%";
-        if (tempVal > 115) {
-            tempFill.style.background = "#EF4444";
-        } else if (tempVal > 100) {
-            tempFill.style.background = "#F59E0B";
-        } else {
-            tempFill.style.background = "#10B981";
-        }
+        tempFill.style.background = tempVal > 115 ? "#EF4444" : (tempVal > 100 ? "#F59E0B" : "#10B981");
     }
 
     const tempStatus = document.getElementById("esp32-temp-status");
@@ -629,7 +632,7 @@ function actualizarVistaESP32(data) {
         }
     }
 
-    // 3. Badges de Conexión y Estado
+    // 3. Badges
     const badgeConn = document.getElementById("esp32-connection-badge");
     if (badgeConn) {
         badgeConn.className = "badge badge-live";
@@ -638,14 +641,10 @@ function actualizarVistaESP32(data) {
 
     const lastSeen = document.getElementById("esp32-last-seen");
     if (lastSeen) {
-        const d = new Date();
-        lastSeen.innerText = `Último paquete: ${d.toLocaleTimeString()}`;
+        lastSeen.innerText = `Último paquete: ${new Date().toLocaleTimeString()}`;
     }
 
-    // 4. Agregar a gráficos
     agregarPuntoGraficoESP32(tempVal, vibTotal);
-
-    // 5. Agregar al terminal de tramas
     agregarTramaTerminal(data);
 }
 
@@ -683,15 +682,11 @@ function agregarTramaTerminal(data) {
     row.innerHTML = `<span class="terminal-ts">[${ts}]</span> <span class="terminal-json">${JSON.stringify(data)}</span>`;
     terminal.prepend(row);
 
-    // Limitar filas a 30
     while (terminal.children.length > 30) {
         terminal.removeChild(terminal.lastChild);
     }
 }
 
-/**
- * Simulador de ESP32 para pruebas sin tener la tarjeta física encendida
- */
 function toggleSimularESP32() {
     const btn = document.getElementById("btn-simular-esp32");
     if (esp32Simulando) {
@@ -707,7 +702,7 @@ function toggleSimularESP32() {
     } else {
         esp32Simulando = true;
         if (btn) btn.innerText = "⏹ Detener Simulación";
-        let tempSim = 78.5;
+        let tempSim = 82.5;
         esp32SimuladoInterval = setInterval(() => {
             tempSim += (Math.random() - 0.48) * 0.8;
             tempSim = Math.max(25, Math.min(125, tempSim));
@@ -725,7 +720,7 @@ function toggleSimularESP32() {
                 ay: parseFloat(ay.toFixed(2)),
                 az: parseFloat(az.toFixed(2)),
                 vibracion_total: parseFloat(vibTotal.toFixed(2)),
-                rssi: -58,
+                rssi: -55,
                 uptime_s: Math.floor(Date.now() / 1000)
             };
 
@@ -735,7 +730,7 @@ function toggleSimularESP32() {
 }
 
 // =========================================================================
-// INICIALIZACIÓN DE GRÁFICOS (CHART.JS)
+// GRÁFICOS CHART.JS
 // =========================================================================
 function inicializarGraficosVisuales() {
     const ctxGen = document.getElementById("chart-general");
@@ -778,11 +773,7 @@ function inicializarGraficosVisuales() {
             type: 'line',
             data: {
                 labels: [],
-                datasets: [{
-                    label: 'Temp (°C)',
-                    borderColor: '#2563EB',
-                    data: []
-                }]
+                datasets: [{ label: 'Temp (°C)', borderColor: '#2563EB', data: [] }]
             },
             options: { responsive: true, maintainAspectRatio: false }
         });
@@ -794,11 +785,7 @@ function inicializarGraficosVisuales() {
             type: 'line',
             data: {
                 labels: [],
-                datasets: [{
-                    label: 'Vibración (g)',
-                    borderColor: '#10B981',
-                    data: []
-                }]
+                datasets: [{ label: 'Vibración (g)', borderColor: '#10B981', data: [] }]
             },
             options: { responsive: true, maintainAspectRatio: false }
         });
@@ -858,7 +845,7 @@ function inicializarGraficosESP32() {
 }
 
 // =========================================================================
-// SIMULACIÓN DE TELEMETRÍA EN VIVO (MÓDULO EXISTENTE INTACTO)
+// MÓDULO EXISTENTE: TELEMETRÍA SIMULADA (INTACTO)
 // =========================================================================
 function iniciarMedicionSimulada() {
     if (intervaloSimulacion) return;
@@ -978,7 +965,6 @@ async function consultarGemini() {
     const mensaje = input.value.trim();
     if (!mensaje) return;
 
-    // Mensaje del usuario
     let userDiv = document.createElement("div");
     userDiv.className = "message user";
     userDiv.innerText = mensaje;
@@ -986,7 +972,6 @@ async function consultarGemini() {
     input.value = "";
     container.scrollTop = container.scrollHeight;
 
-    // Indicador de pensando
     let loadingDiv = document.createElement("div");
     loadingDiv.className = "message bot";
     loadingDiv.id = "loading-bot";
@@ -1008,7 +993,6 @@ async function consultarGemini() {
     let respuestaTexto = null;
     let ultimoError = null;
 
-    // 1. Llamar al backend de Vercel /api/chat.js
     try {
         const respBackend = await fetch('/api/chat', {
             method: 'POST',
@@ -1033,37 +1017,6 @@ async function consultarGemini() {
         ultimoError = err.message;
     }
 
-    // 2. Fallback con API Key local si existe en localStorage
-    if (!respuestaTexto) {
-        const localKey = localStorage.getItem("motoDiag_gemini_key");
-        if (localKey) {
-            const promptSistema = `Eres un asistente mecánico experto de la plataforma "MotoDiag IA". El usuario maneja una motocicleta ${motoData.marca} ${motoData.modelo} con cilindraje ${motoData.cilindraje}. Telemetría actual de sensores: ${esp32UltimaTrama ? JSON.stringify(esp32UltimaTrama) : 'en espera'}. Responde de forma técnica pero accesible y breve a cualquier duda sobre mantenimiento, telemetría, temperatura, vibración o fallas mecánicas de su vehículo. Pregunta del usuario: "${mensaje}"`;
-            const modelosDisponibles = ["gemini-flash-lite-latest", "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.8-pro"];
-
-            for (const modelo of modelosDisponibles) {
-                try {
-                    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${localKey}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: promptSistema }] }]
-                        })
-                    });
-
-                    const d = await resp.json();
-                    if (d.candidates && d.candidates[0].content.parts[0].text) {
-                        respuestaTexto = d.candidates[0].content.parts[0].text;
-                        break;
-                    } else if (d.error) {
-                        ultimoError = d.error.message;
-                    }
-                } catch (err) {
-                    ultimoError = err.message || "Error de conexión con Gemini.";
-                }
-            }
-        }
-    }
-
     if (document.getElementById("loading-bot")) {
         document.getElementById("loading-bot").remove();
     }
@@ -1074,7 +1027,7 @@ async function consultarGemini() {
     if (respuestaTexto) {
         botDiv.innerText = respuestaTexto;
     } else {
-        botDiv.innerText = `⚠️ No fue posible consultar al asistente. ${ultimoError ? '(' + ultimoError + ')' : ''}\n\nSi estás en Vercel, asegúrate de configurar la variable de entorno GEMINI_API_KEY en Project Settings > Environment Variables.`;
+        botDiv.innerText = `⚠️ No fue posible consultar al asistente. ${ultimoError ? '(' + ultimoError + ')' : ''}\n\nSi estás en Vercel, asegúrate de configurar la variable de entorno GEMINI_API_KEY en los ajustes del proyecto.`;
     }
 
     container.appendChild(botDiv);

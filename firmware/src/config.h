@@ -7,31 +7,36 @@
 #define WIFI_PASSWORD   "andresj123"
 
 // =========================================================================
-// CONFIGURACIÓN DE FIREBASE REALTIME DATABASE
+// CONFIGURACIÓN DE FIREBASE REALTIME DATABASE (PROYECTO: motodiag-e6676)
 // =========================================================================
-// Ejemplo: "https://motodiag-default-rtdb.firebaseio.com" (sin barra final)
-#define FIREBASE_HOST   "https://motodiag-tu-proyecto-default-rtdb.firebaseio.com"
-// Clave secreta de la base de datos (Database Secret) o Auth Token (opcional si las reglas son públicas o de prueba)
+#define FIREBASE_HOST   "https://motodiag-e6676-default-rtdb.firebaseio.com"
 #define FIREBASE_AUTH   ""
 
+// Intervalo de transmisión en milisegundos (1 segundo)
+#define TELEMETRY_INTERVAL_MS 1000
+
 // =========================================================================
-// PINES DE HARDWARE (Configuración extraída de Tinkered.ai)
+// ASIGNACIÓN DE PINES HARDWARE (Tinkered.ai Circuit)
 // =========================================================================
-// Sensor Inercial MPU6050 (I2C)
-#define I2C_SDA_PIN     21
-#define I2C_SCL_PIN     22
+// Sensor DS18B20 (Temperatura motor/culata OneWire)
+// Requiere resistencia de pull-up de 4.7kΩ entre DATA y 3.3V
+#define PIN_DS18B20     4
+
+// Sensor MPU6050 (Acelerómetro/Giroscopio I2C para vibraciones)
+#define PIN_I2C_SDA     21
+#define PIN_I2C_SCL     22
 #define MPU6050_ADDR    0x68
 
-// Sensor Térmico DS18B20 (OneWire)
-// Requiere resistencia pull-up de 4.7kΩ conectada entre GPIO4 y 3.3V
-#define ONE_WIRE_BUS_PIN 4
-
 // =========================================================================
-// PARÁMETROS DEL VEHÍCULO Y TIEMPO DE TRANSMISIÓN
+// DATOS DE LA MOTOCICLETA
 // =========================================================================
+#define MOTO_ID         "moto_yamaha_ycz110"
 #define MOTO_MARCA      "Yamaha"
-#define MOTO_MODELO     "YCZ"
+#define MOTO_MODELO     "YCZ 110"
 #define MOTO_CILINDRAJE "110cc"
 
-// Intervalo de muestreo y envío en milisegundos (500 ms)
-#define READ_INTERVAL_MS 500
+// Umbrales térmicos para motor 110cc 4T refrigerado por aire
+#define TEMP_OPTIMA_MIN 70.0
+#define TEMP_OPTIMA_MAX 105.0
+#define TEMP_ALERTA     115.0
+#define TEMP_CRITICA    125.0
