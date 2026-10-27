@@ -15,7 +15,6 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Método no permitido. Solo se acepta POST.' });
     }
 
-    // Vercel inyecta automáticamente las variables de entorno configuradas en Project Settings > Environment Variables
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -34,7 +33,17 @@ export default async function handler(req, res) {
         const modelo = motoData?.modelo || 'YCZ';
         const cilindraje = motoData?.cilindraje || '110cc';
 
-        const promptSistema = `Eres un asistente mecánico experto de la plataforma "MotoDiag IA". El usuario maneja una motocicleta ${marca} ${modelo} con cilindraje ${cilindraje}. Responde de forma técnica pero accesible, profesional y concisa a cualquier duda sobre mantenimiento, telemetría, temperatura, vibración o fallas mecánicas de su vehículo. Pregunta del usuario: "${message}"`;
+        const promptSistema = `Eres el asistente mecánico experto y oficial de la plataforma "MotoDiag IA". 
+El usuario conduce una motocicleta ${marca} ${modelo} (cilindraje: ${cilindraje}, motor 4 tiempos refrigerado por aire).
+Responde de forma técnica pero accesible, profesional, clara y concisa a cualquier consulta sobre mecánica, telemetría, mantenimiento, bujías, lubricación o fallas.
+
+INSTRUCCIONES DE FORMATO:
+- Escribe en un estilo directo, limpio y conversacional de chat.
+- Puedes usar negritas normales para resaltar piezas o pasos clave (ejemplo: bujía NGK CR6HSA, aceite Yamalube 20W-50).
+- Usa viñetas con guiones (-) o números (1., 2., 3.) para listas de pasos ordenados.
+- Evita párrafos gigantescos; sé amigable, claro y didáctico.
+
+Pregunta del usuario: "${message}"`;
 
         const modelos = [
             "gemini-flash-lite-latest",

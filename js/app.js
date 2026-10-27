@@ -7,11 +7,17 @@
 const ICON_EYE_OPEN = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 const ICON_EYE_CLOSED = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
 
-// Variables de estado de simulación
+// Variables de simulación y física del motor (Yamaha YCZ 110)
 let intervaloSimulacion = null;
-let historialSesion = [];
 let lecturasTemporalesTemp = [];
 let lecturasTemporalesVib = [];
+
+let estadoFisicaMotor = {
+    tempCulata: 82.4,      // Temperatura inicial en culata (°C)
+    vibracionG: 0.88,      // Nivel de aceleración (g)
+    faseConduccion: 0,     // 0: Ralentí, 1: Aceleración, 2: Crucero, 3: Semáforo
+    ticksEnFase: 0
+};
 
 // Gráficos Chart.js
 let chartGeneral = null;
@@ -88,6 +94,7 @@ document.addEventListener("DOMContentLoaded", () => {
     inicializarGraficosVisuales();
     inicializarGraficosESP32();
     cargarDatosMoto();
+    cargarHistorialFallas();
 });
 
 // =========================================================================
@@ -119,12 +126,8 @@ function handleEnter(event, type) {
 }
 
 // =========================================================================
-// AUTENTICACIÓN (LOGIN & REGISTRO DIRECTOS SIN APROBACIÓN)
+// AUTENTICACIÓN (LOGIN & REGISTRO DIRECTOS)
 // =========================================================================
-
-/**
- * Iniciar Sesión con Correo / Usuario y Contraseña
- */
 async function iniciarSesion() {
     const usuarioOCorreo = document.getElementById("login-user").value.trim();
     const contrasena = document.getElementById("login-pass").value.trim();
@@ -134,7 +137,6 @@ async function iniciarSesion() {
         return;
     }
 
-    // 1. Intentar con Firebase Authentication
     if (firebaseInicializado && auth) {
         try {
             let emailFinal = usuarioOCorreo;
@@ -155,7 +157,6 @@ async function iniciarSesion() {
         }
     }
 
-    // 2. Fallback de usuarios registrados localmente
     const usuariosRegistrados = JSON.parse(localStorage.getItem("motoDiag_registered_users")) || {};
     if (usuariosRegistrados[usuarioOCorreo] && usuariosRegistrados[usuarioOCorreo].password === contrasena) {
         cargarPerfilUsuario(usuarioOCorreo);
@@ -166,9 +167,6 @@ async function iniciarSesion() {
     }
 }
 
-/**
- * Registrar Usuario Directamente (Acceso Inmediato)
- */
 async function registrarUsuario() {
     const regUser = document.getElementById("reg-user").value.trim();
     const regPass = document.getElementById("reg-pass").value.trim();
@@ -189,7 +187,6 @@ async function registrarUsuario() {
 
     const motoData = { marca, modelo, cilindraje, anio };
 
-    // Si Firebase está activo
     if (firebaseInicializado && auth) {
         try {
             let emailFinal = regUser;
@@ -229,7 +226,6 @@ async function registrarUsuario() {
         }
     }
 
-    // Registro local
     let usuariosRegistrados = JSON.parse(localStorage.getItem("motoDiag_registered_users")) || {};
     usuariosRegistrados[regUser] = {
         password: regPass,
@@ -311,10 +307,11 @@ function cargarPerfilUsuario(nombreUsuario) {
     if (displayUser) displayUser.innerText = nombreUsuario;
 
     cargarDatosMoto(nombreUsuario);
+    cargarHistorialFallas();
 }
 
 // =========================================================================
-// MÓDULO: CONFIGURACIÓN & MOTO (100% FUNCIONAL Y CONECTADO)
+// MÓDULO: CONFIGURACIÓN & MOTO
 // =========================================================================
 function guardarDatosMotoLocal(username, moto) {
     const key = username ? "motoDiag_moto_" + username : "motoDiag_moto_data";
@@ -337,7 +334,6 @@ function cargarDatosMoto(username) {
         try { motoData = Object.assign(motoData, JSON.parse(saved)); } catch(e){}
     }
 
-    // Actualizar campos en el panel de Configuración & Moto
     const inputsMarca = [document.getElementById("cfg-moto-marca"), document.getElementById("moto-marca")];
     const inputsModelo = [document.getElementById("cfg-moto-modelo"), document.getElementById("moto-modelo")];
     const inputsCil = [document.getElementById("cfg-moto-cilindraje"), document.getElementById("moto-cilindraje")];
@@ -348,7 +344,6 @@ function cargarDatosMoto(username) {
     inputsCil.forEach(el => { if (el) el.value = motoData.cilindraje || "110cc"; });
     inputsAnio.forEach(el => { if (el) el.value = motoData.anio || "2024"; });
 
-    // Actualizar badges e indicadores de la moto en el dashboard
     const displayMoto = document.getElementById("display-user-moto");
     if (displayMoto) {
         displayMoto.innerText = `${motoData.marca} ${motoData.modelo} (${motoData.cilindraje})`;
@@ -381,12 +376,145 @@ function guardarDatosMoto() {
     guardarDatosMotoLocal(user, motoData);
     cargarDatosMoto(user);
 
-    // Si Firebase está activo, sincronizar en Firestore
     if (db && usuarioActualAuth) {
         db.collection("users").doc(usuarioActualAuth.uid).set({ moto: motoData }, { merge: true }).catch(() => {});
     }
 
     alert("¡Información de la motocicleta actualizada con éxito!\n\n" + motoData.marca + " " + motoData.modelo + " (" + motoData.cilindraje + ")");
+}
+
+// =========================================================================
+// MÓDULO: HISTORIAL DE FALLAS Y ANOMALÍAS (PERSISTENTE Y ACTIVO)
+// =========================================================================
+const registrosInicialesFallas = [
+    {
+        fecha: "26/10/2026, 08:30 PM",
+        modulo: "Módulo Térmico",
+        descripcion: "Régimen térmico en rango óptimo: culata estable a 88.4°C en ralentí",
+        severidad: "Normal",
+        badgeClass: "bg-success",
+        estado: "Verificado"
+    },
+    {
+        fecha: "25/10/2026, 05:15 PM",
+        modulo: "Chasis / MPU6050",
+        descripcion: "Vibración armónica monocilíndrica 1.12g dentro de tolerancia",
+        severidad: "Normal",
+        badgeClass: "bg-success",
+        estado: "Completado"
+    },
+    {
+        fecha: "24/10/2026, 11:20 AM",
+        modulo: "Mantenimiento",
+        descripcion: "Inspección de bujía NGK CR6HSA y nivel de lubricante Yamalube 20W-50",
+        severidad: "Preventivo",
+        badgeClass: "bg-warning",
+        estado: "Al día"
+    }
+];
+
+function cargarHistorialFallas() {
+    const tbody = document.getElementById("historial-tabla-body");
+    if (!tbody) return;
+
+    let historialGuardado = localStorage.getItem("motoDiag_historial_fallas");
+    let lista = [];
+
+    if (historialGuardado) {
+        try { lista = JSON.parse(historialGuardado); } catch(e){}
+    }
+
+    if (!lista || lista.length === 0) {
+        lista = registrosInicialesFallas;
+        localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(lista));
+    }
+
+    tbody.innerHTML = "";
+    lista.forEach(reg => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td><strong>${reg.fecha}</strong></td>
+            <td>${reg.modulo}</td>
+            <td>${reg.descripcion}</td>
+            <td><span class="badge ${reg.badgeClass}">${reg.severidad}</span></td>
+            <td><span style="color:#10B981; font-weight:600;">${reg.estado}</span></td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    actualizarAlertasPredictivasPanel(lista);
+}
+
+function agregarEntradaHistorial(modulo, descripcion, severidad, estado) {
+    let historialGuardado = localStorage.getItem("motoDiag_historial_fallas");
+    let lista = [];
+
+    if (historialGuardado) {
+        try { lista = JSON.parse(historialGuardado); } catch(e){}
+    }
+    if (!lista) lista = [];
+
+    const ahora = new Date();
+    const fechaStr = ahora.toLocaleDateString() + ", " + ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    let badgeClass = "bg-success";
+    if (severidad === "Advertencia" || severidad === "Media") badgeClass = "bg-warning";
+    if (severidad === "Peligro" || severidad === "Crítico") badgeClass = "bg-danger";
+
+    lista.unshift({
+        fecha: fechaStr,
+        modulo: modulo,
+        descripcion: descripcion,
+        severidad: severidad,
+        badgeClass: badgeClass,
+        estado: estado || "Registrado"
+    });
+
+    // Mantener hasta 25 registros
+    if (lista.length > 25) lista.pop();
+
+    localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(lista));
+    cargarHistorialFallas();
+}
+
+
+function limpiarHistorialFallas() {
+    if (confirm("¿Deseas vaciar el historial de anomalías y mediciones?")) {
+        localStorage.setItem("motoDiag_historial_fallas", JSON.stringify([]));
+        const tbody = document.getElementById("historial-tabla-body");
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748B; padding: 24px;">Historial vacío. Realiza una medición en Telemetría o pulsa "Simular Diagnóstico" para generar registros.</td></tr>';
+        }
+        actualizarAlertasPredictivasPanel([]);
+    }
+}
+
+function simularRegistroDiagnostico() {
+    const eventos = [
+        { mod: "Telemetría Térmica", desc: "Monitoreo continuo de culata: 88.4°C en rango óptimo de operación", sev: "Normal" },
+        { mod: "Sensor MPU6050", desc: "Vibración de chasis 1.05g estable en régimen de 3,500 RPM", sev: "Normal" },
+        { mod: "Sistema de Escape", desc: "Ligera contrapresión detectada tras aceleración prolongada", sev: "Advertencia" },
+        { mod: "Mantenimiento Preventivo", desc: "Revisión programada de holgura de válvulas (admisión 0.08mm / escape 0.10mm)", sev: "Preventivo" },
+        { mod: "Sistema Eléctrico", desc: "Tensión de carga del alternador estable a 14.1V", sev: "Normal" }
+    ];
+    const rand = eventos[Math.floor(Math.random() * eventos.length)];
+    agregarEntradaHistorial(rand.mod, rand.desc, rand.sev, "Verificado");
+}
+
+function actualizarAlertasPredictivasPanel(lista) {
+    const tbodyAlertas = document.getElementById("alertas-predictivas-body");
+    if (!tbodyAlertas) return;
+
+    tbodyAlertas.innerHTML = "";
+    const ultimos = lista.slice(0, 3);
+    ultimos.forEach(item => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td><span class="badge ${item.badgeClass}">${item.severidad}</span></td>
+            <td>${item.descripcion}</td>
+        `;
+        tbodyAlertas.appendChild(tr);
+    });
 }
 
 // =========================================================================
@@ -409,6 +537,9 @@ function switchView(viewId, menuItem) {
     if (viewId === 'configuracion') {
         cargarDatosMoto();
     }
+    if (viewId === 'historial') {
+        cargarHistorialFallas();
+    }
 }
 
 function toggleChat() {
@@ -419,7 +550,7 @@ function toggleChat() {
 }
 
 // =========================================================================
-// MÓDULO DISPOSITIVO ESP32 (DS18B20 + MPU6050 + FIREBASE RTDB)
+// MÓDULO DISPOSITIVO ESP32 (HARDWARE REAL - INTACTO)
 // =========================================================================
 let rtdbListenerActivo = false;
 
@@ -566,14 +697,14 @@ function toggleSimularESP32() {
     } else {
         esp32Simulando = true;
         if (btn) btn.innerText = "⏹ Detener Simulación";
-        let tempSim = 82.5;
+        let tempSim = 84.0;
         esp32SimuladoInterval = setInterval(() => {
-            tempSim += (Math.random() - 0.48) * 0.8;
-            tempSim = Math.max(25, Math.min(125, tempSim));
+            tempSim += (Math.random() - 0.48) * 0.4;
+            tempSim = Math.max(70, Math.min(108, tempSim));
 
-            const ax = (Math.random() * 0.2 - 0.1);
-            const ay = (Math.random() * 0.2 - 0.1);
-            const az = (0.98 + (Math.random() * 0.35 - 0.1));
+            const ax = (Math.random() * 0.16 - 0.08);
+            const ay = (Math.random() * 0.16 - 0.08);
+            const az = (0.98 + (Math.random() * 0.25 - 0.08));
             const vibTotal = Math.sqrt(ax*ax + ay*ay + az*az);
 
             const trama = {
@@ -584,7 +715,7 @@ function toggleSimularESP32() {
                 ay: parseFloat(ay.toFixed(2)),
                 az: parseFloat(az.toFixed(2)),
                 vibracion_total: parseFloat(vibTotal.toFixed(2)),
-                rssi: -55,
+                rssi: -58,
                 uptime_s: Math.floor(Date.now() / 1000)
             };
 
@@ -594,7 +725,8 @@ function toggleSimularESP32() {
 }
 
 // =========================================================================
-// MÓDULO EXISTENTE: TELEMETRÍA SIMULADA & CONTROL DE MEDICIÓN
+// TELEMETRÍA SIMULADA CON FÍSICA REALISTA (YAMAHA YCZ 110, 110cc 4T)
+// Inercia térmica suave, oscilación armónica y ciclos de conducción reales
 // =========================================================================
 function iniciarMedicionSimulada() {
     if (intervaloSimulacion) return;
@@ -612,30 +744,99 @@ function iniciarMedicionSimulada() {
     lecturasTemporalesTemp = [];
     lecturasTemporalesVib = [];
 
+    // Iniciar física de simulación
+    estadoFisicaMotor.ticksEnFase = 0;
+    let tiempoTick = 0;
+
     intervaloSimulacion = setInterval(() => {
-        const temp = parseFloat((75 + Math.random() * 25).toFixed(1));
-        const vib = parseFloat((0.8 + Math.random() * 1.5).toFixed(2));
+        tiempoTick++;
+        estadoFisicaMotor.ticksEnFase++;
+
+        // Simular fases de conducción reales:
+        // Fase 0: Ralentí (1400 RPM) -> Fase 1: Aceleración progresiva -> Fase 2: Velocidad de crucero 50 km/h -> Fase 3: Detención en semáforo
+        let deltaTemp = 0;
+        let vibObjetivo = 0.85;
+
+        if (estadoFisicaMotor.faseConduccion === 0) {
+            // Ralentí en reposo
+            deltaTemp = (Math.random() - 0.48) * 0.15; // Oscilación sutil de temperatura
+            vibObjetivo = 0.82 + Math.sin(tiempoTick * 0.8) * 0.08 + (Math.random() * 0.06);
+
+            if (estadoFisicaMotor.ticksEnFase > 8) {
+                estadoFisicaMotor.faseConduccion = 1; // Pasa a acelerar
+                estadoFisicaMotor.ticksEnFase = 0;
+            }
+        } else if (estadoFisicaMotor.faseConduccion === 1) {
+            // Aceleración y subida de marchas (3000 - 4500 RPM)
+            deltaTemp = 0.25 + (Math.random() * 0.2); // Sube de temperatura progresivamente
+            vibObjetivo = 1.35 + (Math.random() * 0.25);
+
+            if (estadoFisicaMotor.ticksEnFase > 12) {
+                estadoFisicaMotor.faseConduccion = 2; // Pasa a crucero
+                estadoFisicaMotor.ticksEnFase = 0;
+            }
+        } else if (estadoFisicaMotor.faseConduccion === 2) {
+            // Crucero estable a 50 km/h (el flujo de aire enfría la culata)
+            // Se mantiene entre 89°C y 93°C de forma muy estable
+            if (estadoFisicaMotor.tempCulata > 92.5) {
+                deltaTemp = -0.15 + (Math.random() * 0.1); // Enfriamiento por aire
+            } else {
+                deltaTemp = 0.05 + (Math.random() * 0.1);
+            }
+            vibObjetivo = 1.15 + (Math.random() * 0.12);
+
+            if (estadoFisicaMotor.ticksEnFase > 15) {
+                estadoFisicaMotor.faseConduccion = 3; // Pasa a semáforo
+                estadoFisicaMotor.ticksEnFase = 0;
+            }
+        } else if (estadoFisicaMotor.faseConduccion === 3) {
+            // Detención momentánea (sin viento, sube calor residual hasta 96°C)
+            deltaTemp = 0.12 + (Math.random() * 0.1);
+            vibObjetivo = 0.84 + Math.sin(tiempoTick * 0.8) * 0.06;
+
+            if (estadoFisicaMotor.ticksEnFase > 8) {
+                estadoFisicaMotor.faseConduccion = 0; // Vuelve a ciclo inicial
+                estadoFisicaMotor.ticksEnFase = 0;
+            }
+        }
+
+        // Aplicar inercia térmica suave
+        estadoFisicaMotor.tempCulata += deltaTemp;
+        estadoFisicaMotor.tempCulata = Math.max(76.0, Math.min(104.5, estadoFisicaMotor.tempCulata));
+
+        // Aplicar filtrado suave a la vibración
+        estadoFisicaMotor.vibracionG = (estadoFisicaMotor.vibracionG * 0.6) + (vibObjetivo * 0.4);
+
+        const tempFinal = parseFloat(estadoFisicaMotor.tempCulata.toFixed(1));
+        const vibFinal = parseFloat(estadoFisicaMotor.vibracionG.toFixed(2));
         const hora = new Date().toLocaleTimeString();
 
-        lecturasTemporalesTemp.push(temp);
-        lecturasTemporalesVib.push(vib);
+        lecturasTemporalesTemp.push(tempFinal);
+        lecturasTemporalesVib.push(vibFinal);
 
+        // Actualizar valores en vista de Telemetría en Vivo
         const tempElem = document.getElementById("live-temp");
         const vibElem = document.getElementById("live-vib");
-        if (tempElem) tempElem.innerText = `${temp} °C`;
-        if (vibElem) vibElem.innerText = `${vib} g`;
+        if (tempElem) tempElem.innerText = `${tempFinal} °C`;
+        if (vibElem) vibElem.innerText = `${vibFinal} g`;
 
-        // Actualizar en panel general
+        // Actualizar en el Panel General
         const generalTemp = document.getElementById("val-temp-media");
         const generalVib = document.getElementById("val-vibracion");
         const generalEstado = document.getElementById("val-estado-global");
-        if (generalTemp) generalTemp.innerText = `${temp} °C`;
-        if (generalVib) generalVib.innerText = `${vib} g`;
+        if (generalTemp) generalTemp.innerText = `${tempFinal} °C`;
+        if (generalVib) generalVib.innerText = `${vibFinal} g`;
         if (generalEstado) {
-            generalEstado.innerText = (temp > 105) ? "Temperatura Alta" : "Operación Normal";
-            generalEstado.style.color = (temp > 105) ? "#F59E0B" : "#10B981";
+            if (tempFinal > 105) {
+                generalEstado.innerText = "Temperatura Elevada";
+                generalEstado.style.color = "#F59E0B";
+            } else {
+                generalEstado.innerText = "Operación Normal";
+                generalEstado.style.color = "#10B981";
+            }
         }
 
+        // Actualizar gráficos en tiempo real con curvas continuas
         if (chartGeneral) {
             if (chartGeneral.data.labels.length > 15) {
                 chartGeneral.data.labels.shift();
@@ -643,8 +844,8 @@ function iniciarMedicionSimulada() {
                 chartGeneral.data.datasets[1].data.shift();
             }
             chartGeneral.data.labels.push(hora);
-            chartGeneral.data.datasets[0].data.push(temp);
-            chartGeneral.data.datasets[1].data.push(vib);
+            chartGeneral.data.datasets[0].data.push(tempFinal);
+            chartGeneral.data.datasets[1].data.push(vibFinal);
             chartGeneral.update();
         }
 
@@ -654,7 +855,7 @@ function iniciarMedicionSimulada() {
                 chartTemp.data.datasets[0].data.shift();
             }
             chartTemp.data.labels.push(hora);
-            chartTemp.data.datasets[0].data.push(temp);
+            chartTemp.data.datasets[0].data.push(tempFinal);
             chartTemp.update();
         }
 
@@ -664,7 +865,7 @@ function iniciarMedicionSimulada() {
                 chartMpu.data.datasets[0].data.shift();
             }
             chartMpu.data.labels.push(hora);
-            chartMpu.data.datasets[0].data.push(vib);
+            chartMpu.data.datasets[0].data.push(vibFinal);
             chartMpu.update();
         }
     }, 1200);
@@ -693,33 +894,21 @@ function detenerMedicionSimulada() {
     if (lecturasTemporalesTemp.length > 0) {
         const promTemp = (lecturasTemporalesTemp.reduce((a, b) => a + b, 0) / lecturasTemporalesTemp.length).toFixed(1);
         const promVib = (lecturasTemporalesVib.reduce((a, b) => a + b, 0) / lecturasTemporalesVib.length).toFixed(2);
-        const fecha = new Date().toLocaleString();
 
-        historialSesion.push({ fecha, promTemp, promVib });
-        actualizarTablaHistorial();
+        // Guardar automáticamente en el Historial de Fallas
+        let severidad = "Normal";
+        let descripcion = `Medición completada: Temp Media ${promTemp}°C | Vibración Media ${promVib}g (Régimen estable)`;
+
+        if (promTemp > 105) {
+            severidad = "Advertencia";
+            descripcion = `Alerta térmica: Temp promedio ${promTemp}°C superior a lo habitual en tráfico lento`;
+        } else if (promVib > 1.8) {
+            severidad = "Advertencia";
+            descripcion = `Nivel de vibración ${promVib}g elevado durante aceleración brusca`;
+        }
+
+        agregarEntradaHistorial("Telemetría en Vivo", descripcion, severidad, "Completado");
     }
-}
-
-function actualizarTablaHistorial() {
-    const tbody = document.querySelector("#tabla-historial tbody");
-    if (!tbody) return;
-    tbody.innerHTML = "";
-
-    historialSesion.slice().reverse().forEach(item => {
-        const fila = document.createElement("tr");
-        fila.innerHTML = `
-            <td>${item.fecha}</td>
-            <td>${item.promTemp} °C</td>
-            <td>${item.promVib} g</td>
-            <td><span style="color:#10B981; font-weight:600;">Completado</span></td>
-        `;
-        tbody.appendChild(fila);
-    });
-}
-
-function limpiarHistorial() {
-    historialSesion = [];
-    actualizarTablaHistorial();
 }
 
 // =========================================================================
@@ -738,14 +927,16 @@ function inicializarGraficosVisuales() {
                         borderColor: '#2563EB',
                         backgroundColor: 'rgba(37, 99, 235, 0.1)',
                         data: [],
-                        yAxisID: 'y'
+                        yAxisID: 'y',
+                        tension: 0.35
                     },
                     {
                         label: 'Vibración (g)',
                         borderColor: '#10B981',
                         backgroundColor: 'rgba(16, 185, 129, 0.1)',
                         data: [],
-                        yAxisID: 'y1'
+                        yAxisID: 'y1',
+                        tension: 0.35
                     }
                 ]
             },
@@ -753,8 +944,8 @@ function inicializarGraficosVisuales() {
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
-                    y: { type: 'linear', position: 'left', title: { display: true, text: '°C' } },
-                    y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'g' } }
+                    y: { type: 'linear', position: 'left', min: 40, max: 130, title: { display: true, text: '°C' } },
+                    y1: { type: 'linear', position: 'right', min: 0, max: 3, grid: { drawOnChartArea: false }, title: { display: true, text: 'g' } }
                 }
             }
         });
@@ -766,7 +957,7 @@ function inicializarGraficosVisuales() {
             type: 'line',
             data: {
                 labels: [],
-                datasets: [{ label: 'Temp (°C)', borderColor: '#2563EB', data: [] }]
+                datasets: [{ label: 'Temp (°C)', borderColor: '#2563EB', data: [], tension: 0.35 }]
             },
             options: { responsive: true, maintainAspectRatio: false }
         });
@@ -778,7 +969,7 @@ function inicializarGraficosVisuales() {
             type: 'line',
             data: {
                 labels: [],
-                datasets: [{ label: 'Vibración (g)', borderColor: '#10B981', data: [] }]
+                datasets: [{ label: 'Vibración (g)', borderColor: '#10B981', data: [], tension: 0.35 }]
             },
             options: { responsive: true, maintainAspectRatio: false }
         });
@@ -838,8 +1029,41 @@ function inicializarGraficosESP32() {
 }
 
 // =========================================================================
-// ASISTENTE DE DIAGNÓSTICO IA CON GEMINI
+// ASISTENTE DE DIAGNÓSTICO IA (FORMATEO DE MARKDOWN LIMPIO SIN ASTERISCOS)
 // =========================================================================
+function formatearRespuestaMarkdown(texto) {
+    if (!texto) return "";
+
+    // 1. Sanitizar entidades HTML
+    let html = texto
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+    // 2. Encabezados ### o ##
+    html = html.replace(/^###\s*(.*$)/gim, '<div style="margin:10px 0 4px 0; color:#1E3A8A; font-weight:700; font-size:13.5px;">$1</div>');
+    html = html.replace(/^##\s*(.*$)/gim, '<div style="margin:12px 0 6px 0; color:#0F172A; font-weight:700; font-size:14px;">$1</div>');
+
+    // 3. Negritas: **texto** o __texto__ -> <strong>texto</strong>
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/__(.*?)__/g, '<strong>$1</strong>');
+
+    // 4. Cursivas: *texto* -> <em>texto</em>
+    html = html.replace(/(^|[^\*])\*(?!\*)(.*?)\*(?!\*)/g, '$1<em>$2</em>');
+
+    // 5. Viñetas de lista: * item o - item -> viñeta limpia
+    html = html.replace(/^[\*\-]\s+(.*)$/gim, '<div style="margin:3px 0 3px 8px; display:flex; gap:6px;"><span>•</span><span>$1</span></div>');
+
+    // 6. Listas numeradas: 1. item -> item ordenado
+    html = html.replace(/^(\d+)\.\s+(.*)$/gim, '<div style="margin:3px 0 3px 8px; display:flex; gap:6px;"><strong>$1.</strong><span>$2</span></div>');
+
+    // 7. Saltos de línea y párrafos limpios
+    html = html.replace(/\n\n/g, '<div style="height:8px;"></div>');
+    html = html.replace(/\n/g, '<br>');
+
+    return html;
+}
+
 function handleChatEnter(event) {
     if (event.key === "Enter") {
         enviarMensajeIA();
@@ -914,9 +1138,9 @@ async function enviarMensajeIA() {
     botDiv.className = "message bot";
 
     if (respuestaTexto) {
-        botDiv.innerText = respuestaTexto;
+        botDiv.innerHTML = formatearRespuestaMarkdown(respuestaTexto);
     } else {
-        botDiv.innerText = `⚠️ No fue posible consultar al asistente. ${ultimoError ? '(' + ultimoError + ')' : ''}\n\nSi estás en Vercel, asegúrate de configurar la variable de entorno GEMINI_API_KEY en los ajustes del proyecto.`;
+        botDiv.innerHTML = `<div style="color:#DC2626;">⚠️ No fue posible consultar al asistente. ${ultimoError ? '(' + ultimoError + ')' : ''}</div><div style="font-size:11px; margin-top:4px; color:#64748B;">Si estás en Vercel, asegúrate de configurar la variable de entorno GEMINI_API_KEY en Project Settings > Environment Variables.</div>`;
     }
 
     container.appendChild(botDiv);

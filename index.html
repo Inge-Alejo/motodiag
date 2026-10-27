@@ -329,7 +329,14 @@
                 <!-- VISTA 3: HISTORIAL DE FALLAS -->
                 <div id="historial" class="view">
                     <div class="panel">
-                        <h3>Registro de Anomalías e Historial (Base de Datos)</h3>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+                        <h3 style="margin: 0;">Registro de Anomalías e Historial (Base de Datos)</h3>
+                        <div style="display: flex; gap: 8px;">
+                            <button type="button" class="btn-save" style="background: #2563EB; font-size: 12px; padding: 6px 12px; margin: 0; border-radius: 6px;" onclick="cargarHistorialFallas()">🔄 Refrescar</button>
+                            <button type="button" class="btn-save" style="background: #059669; font-size: 12px; padding: 6px 12px; margin: 0; border-radius: 6px;" onclick="simularRegistroDiagnostico()">➕ Simular Evento</button>
+                            <button type="button" class="btn-save" style="background: #DC2626; font-size: 12px; padding: 6px 12px; margin: 0; border-radius: 6px;" onclick="limpiarHistorialFallas()">🗑️ Vaciar</button>
+                        </div>
+                    </div>
                         <table>
                             <thead>
                                 <tr><th>Fecha/Hora</th><th>Módulo</th><th>Descripción</th><th>Severidad</th><th>Estado</th></tr>
