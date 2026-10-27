@@ -426,12 +426,18 @@ function guardarDatosMoto() {
         db.collection("users").doc(usuarioActualAuth.uid).set({ moto: motoData }, { merge: true }).catch(() => {});
     }
 
-    alert("¡Información de la motocicleta actualizada con éxito!\n\n" + motoData.marca + " " + motoData.modelo + " (" + motoData.cilindraje + ")");
+    // REGISTRAR EN EL HISTORIAL DE FALLAS CON MÓDULO "Configuración & Moto"
+    const descripcion = `Actualización técnica: ${motoData.marca} ${motoData.modelo} (${motoData.cilindraje}, Año ${motoData.anio})`;
+    agregarEntradaHistorial("Configuración & Moto", descripcion, "Normal", "Al día");
+
+    mostrarNotificacionGuardado(
+        "✅ Configuración & Moto Guardada",
+        descripcion + " registrado en el historial y base de datos."
+    );
+
+    alert(`¡Información de la motocicleta actualizada con éxito! Registrado en Historial de Fallas:\n\n${motoData.marca} ${motoData.modelo} (${motoData.cilindraje})`);
 }
 
-// =========================================================================
-// MÓDULO: HISTORIAL DE FALLAS Y ANOMALÍAS (PERSISTENTE Y ACTIVO)
-// =========================================================================
 const registrosInicialesFallas = [
     {
         fecha: "26/10/2026, 08:30 PM",
@@ -1016,6 +1022,13 @@ function detenerMedicionSimulada() {
     if (btnIniciar) btnIniciar.disabled = false;
     if (btnDetener) btnDetener.disabled = true;
 
+    // Detectar vista activa para asignar el módulo correspondiente
+    const vistaActiva = document.querySelector('.view.active-view');
+    let nombreModulo = "Configuración & Moto";
+    if (vistaActiva && vistaActiva.id === "telemetria") {
+        nombreModulo = "Telemetría en Vivo";
+    }
+
     // Obtener promedios reales o lectura actual
     let promTemp = estadoFisicaMotor.tempCulata.toFixed(1);
     let promVib = estadoFisicaMotor.vibracionG.toFixed(2);
@@ -1028,7 +1041,7 @@ function detenerMedicionSimulada() {
     // Actualizar etiquetas de estado en ambas vistas
     const estadoLbl = document.getElementById("estado-medicion-lbl");
     if (estadoLbl) {
-        estadoLbl.innerHTML = `<span style="color:#10B981; font-weight:600;">✅ Medición finalizada: Temp ${promTemp}°C | Vib ${promVib}g guardada en base de datos.</span>`;
+        estadoLbl.innerHTML = `<span style="color:#10B981; font-weight:600;">✅ Medición finalizada (${nombreModulo}): Temp ${promTemp}°C | Vib ${promVib}g guardada en base de datos e historial.</span>`;
     }
     const teleLiveStatus = document.getElementById("telemetria-live-status-lbl");
     if (teleLiveStatus) {
@@ -1036,18 +1049,18 @@ function detenerMedicionSimulada() {
     }
 
     let severidad = "Normal";
-    let descripcion = `Medición completada: Temp Media ${promTemp}°C | Vibración Media ${promVib}g (Operación continua Yamaha YCZ 110)`;
+    let descripcion = `Medición completada desde ${nombreModulo}: Temp Media ${promTemp}°C | Vibración Media ${promVib}g (Yamaha YCZ 110)`;
 
     if (parseFloat(promTemp) > 105) {
         severidad = "Advertencia";
-        descripcion = `Alerta térmica: Temp promedio ${promTemp}°C superior al rango habitual`;
+        descripcion = `Alerta térmica desde ${nombreModulo}: Temp promedio ${promTemp}°C superior al rango habitual`;
     } else if (parseFloat(promVib) > 1.8) {
         severidad = "Advertencia";
         descripcion = `Nivel de vibración promedio ${promVib}g elevado`;
     }
 
-    // GUARDADO INMEDIATO E INCONDICIONAL
-    agregarEntradaHistorial("Telemetría en Vivo", descripcion, severidad, "Completado");
+    // GUARDADO EN HISTORIAL CON EL MÓDULO EXACTO
+    agregarEntradaHistorial(nombreModulo, descripcion, severidad, "Completado");
 }
 
 function inicializarGraficosVisuales() {
@@ -1282,4 +1295,14 @@ async function enviarMensajeIA() {
 
     container.appendChild(botDiv);
     container.scrollTop = container.scrollHeight;
+}
+
+
+function registrarFallaDesdeConfiguracion() {
+    const falla = prompt("Ingresa el reporte de anomalía, mantenimiento o revisión de la moto:", "Inspección de bujía, calibración de válvulas y cambio de aceite");
+    if (falla && falla.trim()) {
+        agregarEntradaHistorial("Configuración & Moto", falla.trim(), "Preventivo", "Registrado");
+        mostrarNotificacionGuardado("✅ Registrado en Historial", falla.trim());
+        alert("Reporte guardado en el Historial de Fallas con éxito.");
+    }
 }
