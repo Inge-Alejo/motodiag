@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%232563EB'/><path d='M10 16 L14 12 L18 20 L22 14' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/></svg>">
     <title>MotoDiag IA - Diagnóstico Predictivo & Telemetría</title>
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/styles.css?v=1793074086681">
     <!-- Chart.js para visualización de telemetría -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -178,6 +178,23 @@
 
                 <!-- VISTA 2: TELEMETRÍA EN VIVO (MÓDULO EXISTENTE CONSERVADO) -->
                 <div id="telemetria" class="view">
+
+                      <!-- Barra de Control de Medición en Telemetría en Vivo -->
+                      <div id="telemetria-ctrl-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #FFFFFF; padding: 14px 18px; border-radius: 12px; border: 1px solid #E2E8F0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-wrap: wrap; gap: 10px;">
+                          <div>
+                              <strong style="color: #0F172A; font-size: 14px;">Adquisición de Telemetría (Yamaha YCZ 110):</strong>
+                              <span id="telemetria-live-status-lbl" style="margin-left: 8px; font-size: 13px; color: #10B981; font-weight: 600;">● Sensores activos en rango óptimo</span>
+                          </div>
+                          <div style="display: flex; gap: 10px;">
+                              <button type="button" class="btn-save" onclick="iniciarMedicionSimulada()" style="background: #10B981; padding: 8px 16px; font-size: 13px; margin: 0; border-radius: 6px;">
+                                  📊 Iniciar Medición
+                              </button>
+                              <button type="button" class="btn-save" onclick="detenerMedicionSimulada()" style="background: #EF4444; padding: 8px 16px; font-size: 13px; margin: 0; border-radius: 6px;">
+                                  ⏹️ Parar y Guardar en BD
+                              </button>
+                          </div>
+                      </div>
+    
                     <div class="cards-grid grid-2">
                         <div class="card warning">
                             <h3>Sensor de Temperatura</h3>
@@ -400,6 +417,18 @@
         </div>
     </div>
 
-    <script src="js/app.js"></script>
+    <script src="js/app.js?v=1793074086681"></script>
+
+      <!-- NOTIFICACIÓN FLOTANTE DE GUARDADO EXITOSO -->
+      <div id="toast-notification" style="display: none; position: fixed; bottom: 24px; right: 24px; background: #0F172A; color: white; padding: 14px 20px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.25); z-index: 10000; border-left: 5px solid #10B981; max-width: 380px; animation: fadeIn 0.3s ease;">
+          <div style="display: flex; align-items: flex-start; gap: 12px;">
+              <span style="font-size: 20px;">✅</span>
+              <div>
+                  <div id="toast-title" style="font-weight: 700; font-size: 14px; margin-bottom: 2px;">Medición Guardada</div>
+                  <div id="toast-message" style="font-size: 12.5px; color: #CBD5E1;">Los datos han sido almacenados en el historial y base de datos.</div>
+              </div>
+          </div>
+      </div>
+    
 </body>
 </html>

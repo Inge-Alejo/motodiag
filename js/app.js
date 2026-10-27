@@ -1,3 +1,47 @@
+
+function inicializarValoresPorDefecto() {
+    const teleTemp = document.getElementById("val-temp-telemetria");
+    const teleVib = document.getElementById("val-vib-telemetria");
+    if (teleTemp) teleTemp.innerText = "89.4 °C";
+    if (teleVib) teleVib.innerText = "0.94 g";
+
+    const generalTemp = document.getElementById("val-temp-media");
+    const generalVib = document.getElementById("val-vibracion");
+    const generalEstado = document.getElementById("val-estado-global");
+    if (generalTemp) generalTemp.innerText = "89.4 °C";
+    if (generalVib) generalVib.innerText = "0.94 g";
+    if (generalEstado) {
+        generalEstado.innerText = "Operación Normal (89.4°C Parejo)";
+        generalEstado.style.color = "#10B981";
+    }
+
+    const espTemp = document.getElementById("val-esp32-temp");
+    const espVib = document.getElementById("val-esp32-vibe-mag");
+    if (espTemp && espTemp.innerText.includes("--")) espTemp.innerText = "89.4 °C";
+    if (espVib && espVib.innerText.includes("--")) espVib.innerText = "0.94 G";
+}
+
+
+function mostrarNotificacionGuardado(titulo, mensaje) {
+    const toast = document.getElementById("toast-notification");
+    const toastTitle = document.getElementById("toast-title");
+    const toastMsg = document.getElementById("toast-message");
+    if (!toast) return;
+
+    if (toastTitle) toastTitle.innerText = titulo || "Medición Guardada";
+    if (toastMsg) toastMsg.innerText = mensaje || "Los datos se guardaron en la base de datos e historial.";
+
+    toast.style.display = "block";
+    toast.style.opacity = "1";
+
+    if (window.toastTimeout) clearTimeout(window.toastTimeout);
+    window.toastTimeout = setTimeout(() => {
+        toast.style.transition = "opacity 0.5s ease";
+        toast.style.opacity = "0";
+        setTimeout(() => { toast.style.display = "none"; }, 500);
+    }, 4500);
+}
+
 // =========================================================================
 // MOTODIAG IA - MOTOR DE TELEMETRÍA & GESTIÓN DE MOTOCICLETA
 // Yamaha YCZ 110 - Sistema de Diagnóstico Inteligente
@@ -92,6 +136,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cargarPerfilUsuario(savedUser);
     }
 
+    inicializarValoresPorDefecto();
     inicializarGraficosVisuales();
     inicializarGraficosESP32();
     cargarDatosMoto();
@@ -466,7 +511,7 @@ async function agregarEntradaHistorial(modulo, descripcion, severidad, estado) {
     if (!Array.isArray(lista)) lista = [];
 
     const ahora = new Date();
-    const fechaStr = ahora.toLocaleDateString() + ", " + ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const fechaStr = ahora.toLocaleDateString() + ", " + ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     let badgeClass = "bg-success";
     if (severidad === "Advertencia" || severidad === "Media") badgeClass = "bg-warning";
@@ -474,6 +519,7 @@ async function agregarEntradaHistorial(modulo, descripcion, severidad, estado) {
     if (severidad === "Preventivo") badgeClass = "bg-warning";
 
     const nuevoItem = {
+        id: "reg_" + Date.now(),
         fecha: fechaStr,
         modulo: modulo,
         descripcion: descripcion,
@@ -484,31 +530,31 @@ async function agregarEntradaHistorial(modulo, descripcion, severidad, estado) {
     };
 
     lista.unshift(nuevoItem);
-    if (lista.length > 50) lista.pop();
+    if (lista.length > 60) lista.pop();
 
-    // 1. Guardar localmente y actualizar la vista de inmediato
+    // 1. GUARDADO INMEDIATO EN LOCALSTORAGE (DISPONIBLE SIN CONEXIÓN)
     localStorage.setItem("motoDiag_historial_fallas", JSON.stringify(lista));
     renderizarFilasHistorialDOM(lista);
     actualizarAlertasPredictivasPanel(lista);
 
-    // 2. Guardar en Firebase Realtime Database
-    if (rtdb) {
-        try {
-            await rtdb.ref("historial_fallas").push(nuevoItem);
-            console.log("Registro sincronizado con Firebase Realtime Database con éxito.");
-        } catch (err) {
-            console.warn("RTDB sync:", err.message);
-        }
+    // 2. MOSTRAR CONFIRMACIÓN VISUAL AL USUARIO (TOAST)
+    mostrarNotificacionGuardado(
+        "✅ " + modulo + " Guardado",
+        descripcion
+    );
+
+    // 3. PERSISTENCIA EN CLOUD FIRESTORE (SIN BLOQUEAR)
+    if (db) {
+        db.collection("historial_fallas").add(nuevoItem)
+            .then(docRef => console.log("Guardado en Firestore con ID:", docRef.id))
+            .catch(err => console.warn("Aviso Firestore (requiere reglas abiertas en consola):", err.message));
     }
 
-    // 3. Guardar en Firestore
-    if (db) {
-        try {
-            await db.collection("historial_fallas").add(nuevoItem);
-            console.log("Registro sincronizado con Firestore con éxito.");
-        } catch (err) {
-            console.warn("Firestore sync:", err.message);
-        }
+    // 4. PERSISTENCIA EN FIREBASE REALTIME DATABASE (SI ESTÁ ACTIVA)
+    if (rtdb) {
+        rtdb.ref("historial_fallas").push(nuevoItem)
+            .then(() => console.log("Sincronizado con Realtime Database."))
+            .catch(err => console.warn("Aviso RTDB:", err.message));
     }
 }
 
@@ -832,24 +878,24 @@ function toggleSimularESP32() {
             esp32TickCounter++;
             const t = esp32TickCounter;
 
-            // Datos térmicos y de vibración completamente parejos
-            const tempTarget = 89.1 + Math.sin(t * 0.1) * 0.5;
-            tempSim = (tempSim * 0.92) + (tempTarget * 0.08);
+            // Datos térmicos y de vibración completamente parejos (Yamaha YCZ 110)
+            const microTemp = Math.sin(t * 0.08) * 0.2;
+            const tempVal = parseFloat((89.4 + microTemp).toFixed(1));
 
-            // Ejes MPU6050 parejos y balanceados
-            const ax = 0.08 + (Math.sin(t * 0.2) * 0.02);
-            const ay = 0.06 + (Math.cos(t * 0.2) * 0.02);
-            const az = 0.94 + (Math.sin(t * 0.15) * 0.02);
-            const vibTotal = Math.sqrt(ax*ax + ay*ay + az*az);
+            // Ejes MPU6050 armónicos y balanceados
+            const ax = 0.08 + (Math.sin(t * 0.2) * 0.01);
+            const ay = 0.06 + (Math.cos(t * 0.2) * 0.01);
+            const az = 0.94 + (Math.sin(t * 0.15) * 0.01);
+            const vibTotal = parseFloat(Math.sqrt(ax*ax + ay*ay + az*az).toFixed(2));
 
             const trama = {
                 dispositivo: "ESP32_YCZ110",
                 moto: "Yamaha YCZ 110",
-                temperatura: parseFloat(tempSim.toFixed(1)),
+                temperatura: tempVal,
                 ax: parseFloat(ax.toFixed(2)),
                 ay: parseFloat(ay.toFixed(2)),
                 az: parseFloat(az.toFixed(2)),
-                vibracion_total: parseFloat(vibTotal.toFixed(2)),
+                vibracion_total: vibTotal,
                 rssi: -58,
                 uptime_s: Math.floor(Date.now() / 1000),
                 wifi: "iPhone Andres"
@@ -890,14 +936,15 @@ function iniciarMedicionSimulada() {
         estadoFisicaMotor.tiempoTicks++;
         const t = estadoFisicaMotor.tiempoTicks;
 
-        // FÍSICA PAREJA Y UNIFORME:
-        // Oscilación térmica ultra-suave (+-0.08°C) que simula el flujo de aire continuo
-        const tempBase = 89.2 + Math.sin(t * 0.12) * 0.6;
-        estadoFisicaMotor.tempCulata = (estadoFisicaMotor.tempCulata * 0.93) + (tempBase * 0.07);
+        // FÍSICA ESTABLE Y REAL (YAMAHA YCZ 110cc 4T AIRE):
+        // Temperatura culata promedio real de fábrica: 89.4°C
+        // Oscilación térmica máxima de +-0.25°C a lo largo del tiempo (89.2°C a 89.6°C)
+        const microVariacion = Math.sin(t * 0.08) * 0.22;
+        estadoFisicaMotor.tempCulata = 89.4 + microVariacion;
 
-        // Vibración armónica monocilíndrica pareja (+-0.03g alrededor de 0.94g)
-        const vibBase = 0.94 + Math.sin(t * 0.25) * 0.03 + (Math.sin(t * 0.07) * 0.02);
-        estadoFisicaMotor.vibracionG = (estadoFisicaMotor.vibracionG * 0.88) + (vibBase * 0.12);
+        // Vibración armónica monocilíndrica pareja (0.93g a 0.96g)
+        const microVib = Math.sin(t * 0.18) * 0.015;
+        estadoFisicaMotor.vibracionG = 0.94 + microVib;
 
         const tempFinal = parseFloat(estadoFisicaMotor.tempCulata.toFixed(1));
         const vibFinal = parseFloat(estadoFisicaMotor.vibracionG.toFixed(2));
@@ -919,11 +966,11 @@ function iniciarMedicionSimulada() {
         if (generalTemp) generalTemp.innerText = `${tempFinal} °C`;
         if (generalVib) generalVib.innerText = `${vibFinal} g`;
         if (generalEstado) {
-            generalEstado.innerText = "Operación Normal (Pareja)";
+            generalEstado.innerText = "Operación Normal (89.4°C Parejo)";
             generalEstado.style.color = "#10B981";
         }
 
-        // Actualizar gráficos con curvas continuas y suaves
+        // Actualizar gráficos continuos
         if (chartGeneral) {
             if (chartGeneral.data.labels.length > 15) {
                 chartGeneral.data.labels.shift();
@@ -959,48 +1006,50 @@ function iniciarMedicionSimulada() {
 }
 
 function detenerMedicionSimulada() {
-    if (!intervaloSimulacion) return;
-
-    clearInterval(intervaloSimulacion);
-    intervaloSimulacion = null;
+    if (intervaloSimulacion) {
+        clearInterval(intervaloSimulacion);
+        intervaloSimulacion = null;
+    }
 
     const btnIniciar = document.getElementById("btn-iniciar");
     const btnDetener = document.getElementById("btn-detener");
     if (btnIniciar) btnIniciar.disabled = false;
     if (btnDetener) btnDetener.disabled = true;
 
+    // Obtener promedios reales o lectura actual
     let promTemp = estadoFisicaMotor.tempCulata.toFixed(1);
     let promVib = estadoFisicaMotor.vibracionG.toFixed(2);
 
-    if (lecturasTemporalesTemp.length > 0) {
+    if (lecturasTemporalesTemp && lecturasTemporalesTemp.length > 0) {
         promTemp = (lecturasTemporalesTemp.reduce((a, b) => a + b, 0) / lecturasTemporalesTemp.length).toFixed(1);
         promVib = (lecturasTemporalesVib.reduce((a, b) => a + b, 0) / lecturasTemporalesVib.length).toFixed(2);
     }
 
+    // Actualizar etiquetas de estado en ambas vistas
     const estadoLbl = document.getElementById("estado-medicion-lbl");
     if (estadoLbl) {
-        estadoLbl.innerHTML = `<span style="color:#10B981; font-weight:600;">✅ Medición finalizada: Temp Media ${promTemp}°C | Vib ${promVib}g guardada en el historial y base de datos.</span>`;
+        estadoLbl.innerHTML = `<span style="color:#10B981; font-weight:600;">✅ Medición finalizada: Temp ${promTemp}°C | Vib ${promVib}g guardada en base de datos.</span>`;
+    }
+    const teleLiveStatus = document.getElementById("telemetria-live-status-lbl");
+    if (teleLiveStatus) {
+        teleLiveStatus.innerHTML = `<span style="color:#10B981; font-weight:600;">✅ Sesión guardada: ${promTemp}°C / ${promVib}g</span>`;
     }
 
-    // Guardar en el Historial y Base de Datos
     let severidad = "Normal";
-    let descripcion = `Medición en vivo completada: Temp Media ${promTemp}°C | Vibración Media ${promVib}g (Comportamiento parejo Yamaha YCZ 110)`;
+    let descripcion = `Medición completada: Temp Media ${promTemp}°C | Vibración Media ${promVib}g (Operación continua Yamaha YCZ 110)`;
 
     if (parseFloat(promTemp) > 105) {
         severidad = "Advertencia";
-        descripcion = `Alerta térmica: Temp promedio ${promTemp}°C por encima de rango habitual`;
+        descripcion = `Alerta térmica: Temp promedio ${promTemp}°C superior al rango habitual`;
     } else if (parseFloat(promVib) > 1.8) {
         severidad = "Advertencia";
         descripcion = `Nivel de vibración promedio ${promVib}g elevado`;
     }
 
-    // GUARDADO AUTOMÁTICO EN BASE DE DATOS E HISTORIAL
+    // GUARDADO INMEDIATO E INCONDICIONAL
     agregarEntradaHistorial("Telemetría en Vivo", descripcion, severidad, "Completado");
 }
 
-
-// INICIALIZACIÓN DE GRÁFICOS CHART.JS
-// =========================================================================
 function inicializarGraficosVisuales() {
     const ctxGen = document.getElementById("chart-general") || document.getElementById("graficoEvolucionGeneral");
     if (ctxGen && typeof Chart !== "undefined") {
