@@ -106,14 +106,11 @@
             <!-- MENÚ DE NAVEGACIÓN -->
             <div class="menu-item active" onclick="switchView('panel-general', this)">Panel General</div>
             <div class="menu-item" onclick="switchView('telemetria', this)">Telemetría en Vivo</div>
-            <!-- NUEVA OPCIÓN: DISPOSITIVO ESP32 -->
+            <!-- OPCIÓN: DISPOSITIVO ESP32 -->
             <div class="menu-item" onclick="switchView('dispositivo', this)">Dispositivo ESP32</div>
             <div class="menu-item" onclick="switchView('historial', this)">Historial de Fallas</div>
             <div class="menu-item" onclick="switchView('configuracion', this)">Configuración & Moto</div>
-            <div class="menu-item ai-chat" onclick="toggleChat()" style="margin-top: 15px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                Asistente IA (Gemini)
-            </div>
+            <div class="menu-item" onclick="toggleChat()">Asistente IA</div>
             <div class="logout-btn" onclick="cerrarSesion()">Cerrar Sesión</div>
         </div>
 
@@ -238,7 +235,7 @@
                         <div class="device-header-info">
                             <h2>
                                 Dispositivo ESP32-D Telemetría
-                                <span id="esp32-status-badge" class="badge-offline">En espera de datos</span>
+                                <span id="esp32-status-badge" class="badge-offline">En espera de hardware real</span>
                             </h2>
                             <p>
                                 <strong>Vehículo:</strong> Yamaha YCZ 110 | 
@@ -248,9 +245,7 @@
                             </p>
                         </div>
                         <div class="device-header-actions">
-                            <button onclick="toggleSimularESP32()" id="btn-simular-esp32" class="btn-save" style="background: #6366F1; font-size: 13px; padding: 8px 14px;">
-                                Simular Envío ESP32
-                            </button>
+                            <button onclick="conectarTelemetriaESP32()" id="btn-reconnect-esp32" class="btn-save" style="background: #2563EB; font-size: 13px; padding: 8px 14px;">Reconectar Hardware ESP32</button>
                         </div>
                     </div>
 
@@ -432,7 +427,7 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=1793076138529"></script>
+    <script src="js/app.js?v=1793077036194"></script>
 
       <!-- NOTIFICACIÓN FLOTANTE DE GUARDADO EXITOSO -->
       <div id="toast-notification" style="display: none; position: fixed; top: 24px; right: 24px; background: #0F172A; color: white; padding: 14px 20px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.25); z-index: 10000; border-left: 5px solid #10B981; max-width: 380px; animation: fadeIn 0.3s ease;">

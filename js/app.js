@@ -608,8 +608,18 @@ async function agregarEntradaHistorial(modulo, descripcion, severidad, estado) {
     // 4. NIVEL 3: PERSISTENCIA EN CLOUD FIRESTORE DE GOOGLE FIREBASE
     if (db) {
         db.collection("historial_fallas").add(nuevoItem)
-            .then(docRef => console.log("Guardado en Firestore con ID:", docRef.id))
-            .catch(err => console.warn("Aviso Firestore (requiere reglas abiertas en consola):", err.message));
+            .then(docRef => {
+                console.log("[Firestore] Guardado exitoso con ID:", docRef.id);
+            })
+            .catch(err => {
+                console.warn("[Firestore] Error al guardar:", err.code, err.message);
+                if (err.code === "permission-denied" || (err.message && err.message.includes("permissions"))) {
+                    mostrarNotificacionGuardado(
+                        "[Atención] Base de Datos Firebase Bloqueada",
+                        "Firestore requiere activar 'allow read, write: if true;' en la pestaña Reglas de Firebase Console."
+                    );
+                }
+            });
     }
 }
 
@@ -860,99 +870,9 @@ function limpiarTerminalESP32() {
 }
 
 function toggleSimularESP32() {
-    const btn = document.getElementById("btn-simular-esp32");
-    inicializarGraficoDispositivo();
-
-    if (esp32Simulando) {
-        // DETENER MEDICIÓN ESP32 Y GUARDAR EN HISTORIAL / BASE DE DATOS
-        clearInterval(esp32SimuladoInterval);
-        esp32SimuladoInterval = null;
-        esp32Simulando = false;
-
-        if (btn) {
-            btn.innerHTML = " Simular Envío ESP32";
-            btn.style.background = "#6366F1";
-        }
-
-        const badgeConn = document.getElementById("esp32-status-badge");
-        if (badgeConn) {
-            badgeConn.className = "badge-offline";
-            badgeConn.innerText = "Sesión Guardada";
-        }
-
-        let promTemp = 89.2;
-        let promVib = 0.95;
-        if (esp32LecturasTemp.length > 0) {
-            promTemp = (esp32LecturasTemp.reduce((a, b) => a + b, 0) / esp32LecturasTemp.length).toFixed(1);
-            promVib = (esp32LecturasVib.reduce((a, b) => a + b, 0) / esp32LecturasVib.length).toFixed(2);
-        }
-
-        let severidad = "Normal";
-        let descripcion = `Transmisión ESP32 guardada: Sonda DS18B20 Media ${promTemp}°C | MPU6050 ${promVib}g (Guardado en base de datos)`;
-
-        if (parseFloat(promTemp) > 105) {
-            severidad = "Advertencia";
-            descripcion = `Alerta térmica ESP32: Temp media ${promTemp}°C por encima de tolerancia`;
-        } else if (parseFloat(promVib) > 1.8) {
-            severidad = "Advertencia";
-            descripcion = `Alerta inercial ESP32: Nivel de vibración media ${promVib}g elevado`;
-        }
-
-        // GUARDADO AUTOMÁTICO EN BASE DE DATOS E HISTORIAL
-        agregarEntradaHistorial("Dispositivo ESP32 (Hardware)", descripcion, severidad, "Completado");
-
-        agregarTramaTerminal({
-            evento: "SESIÓN_FINALIZADA",
-            modulo: "ESP32_YCZ110",
-            temp_promedio: `${promTemp} °C`,
-            vib_promedio: `${promVib} g`,
-            estado: "Guardado en Base de Datos e Historial"
-        });
-
-    } else {
-        // INICIAR MEDICIÓN SIMULADA ESP32 CON FÍSICA PAREJA Y UNIFORME
-        esp32Simulando = true;
-        esp32LecturasTemp = [];
-        esp32LecturasVib = [];
-        esp32TickCounter = 0;
-
-        if (btn) {
-            btn.innerHTML = " Detener Envío ESP32";
-            btn.style.background = "#EF4444";
-        }
-
-        let tempSim = 89.0;
-
-        esp32SimuladoInterval = setInterval(() => {
-            esp32TickCounter++;
-            const t = esp32TickCounter;
-
-            // Datos térmicos y de vibración completamente parejos (Yamaha YCZ 110)
-            const microTemp = Math.sin(t * 0.08) * 0.2;
-            const tempVal = parseFloat((89.4 + microTemp).toFixed(1));
-
-            // Ejes MPU6050 armónicos y balanceados
-            const ax = 0.08 + (Math.sin(t * 0.2) * 0.01);
-            const ay = 0.06 + (Math.cos(t * 0.2) * 0.01);
-            const az = 0.94 + (Math.sin(t * 0.15) * 0.01);
-            const vibTotal = parseFloat(Math.sqrt(ax*ax + ay*ay + az*az).toFixed(2));
-
-            const trama = {
-                dispositivo: "ESP32_YCZ110",
-                moto: "Yamaha YCZ 110",
-                temperatura: tempVal,
-                ax: parseFloat(ax.toFixed(2)),
-                ay: parseFloat(ay.toFixed(2)),
-                az: parseFloat(az.toFixed(2)),
-                vibracion_total: vibTotal,
-                rssi: -58,
-                uptime_s: Math.floor(Date.now() / 1000),
-                wifi: "iPhone Andres"
-            };
-
-            actualizarVistaESP32(trama);
-        }, 1200);
-    }
+    // La simulación en Dispositivo ESP32 está completamente desactivada.
+    // Este módulo opera exclusivamente con telemetría de hardware real del ESP32.
+    conectarTelemetriaESP32();
 }
 
 // =========================================================================
@@ -974,25 +894,55 @@ function iniciarMedicionSimulada() {
 
     const estadoLbl = document.getElementById("estado-medicion-lbl");
     if (estadoLbl) {
-        estadoLbl.innerHTML = '<span style="color:#10B981; font-weight:600;">[Activo] Medición en tiempo real iniciada. Curvas continuas y dinámicas.</span>';
+        estadoLbl.innerHTML = '<span style="color:#10B981; font-weight:600;">[Activo] Medición en tiempo real iniciada (82°C a 98°C).</span>';
     }
 
     lecturasTemporalesTemp = [];
     lecturasTemporalesVib = [];
     estadoFisicaMotor.tiempoTicks = 0;
+    
+    // Inicializar temperatura en un valor operativo intermedio si no está en rango
+    if (!estadoFisicaMotor.tempCulata || estadoFisicaMotor.tempCulata < 82 || estadoFisicaMotor.tempCulata > 98) {
+        estadoFisicaMotor.tempCulata = 88.0;
+    }
+    if (!estadoFisicaMotor.vibracionG || estadoFisicaMotor.vibracionG < 0.85 || estadoFisicaMotor.vibracionG > 1.35) {
+        estadoFisicaMotor.vibracionG = 0.95;
+    }
 
     intervaloSimulacion = setInterval(() => {
         estadoFisicaMotor.tiempoTicks++;
-        const t = estadoFisicaMotor.tiempoTicks;
+        
+        // REGLA SOLICITADA:
+        // Variación aleatoria de ~1 °C por lectura (+ o -).
+        // Rango estricto: mínimo 82 °C, máximo 98 °C.
+        // Nunca bajar más de 5 °C en una sola lectura.
+        const direccion = (Math.random() - 0.48) >= 0 ? 1 : -1;
+        // Variación aleatoria de entre 0.6 °C y 1.4 °C (alrededor de 1 grado)
+        let deltaTemp = (Math.random() * 0.8 + 0.6) * direccion;
+        
+        // Restricción: No bajar más de 5 grados en una lectura
+        if (deltaTemp < -5.0) deltaTemp = -5.0;
 
-        // FÍSICA DINÁMICA REALISTA (YAMAHA YCZ 110cc 4T AIRE):
-        // Temperatura promedio en marcha continua: ~89.5°C con suave variación térmica gradual (+-1.2°C)
-        const cicloCalor = Math.sin(t * 0.08) * 1.2;
-        const tempFinal = parseFloat((89.5 + cicloCalor).toFixed(1));
+        let tempCalculada = estadoFisicaMotor.tempCulata + deltaTemp;
+        
+        // Delimitar dentro del rango 82°C - 98°C
+        if (tempCalculada < 82.0) {
+            tempCalculada = 82.0 + Math.random() * 0.6;
+        } else if (tempCalculada > 98.0) {
+            tempCalculada = 98.0 - Math.random() * 0.6;
+        }
 
-        // Vibración armónica monocilíndrica parejo (0.88g a 1.04g)
-        const cicloVib = Math.sin(t * 0.16) * 0.08;
-        const vibFinal = parseFloat((0.96 + cicloVib).toFixed(2));
+        estadoFisicaMotor.tempCulata = parseFloat(tempCalculada.toFixed(1));
+        const tempFinal = estadoFisicaMotor.tempCulata;
+
+        // Vibración armónica con variación proporcional (0.85g a 1.35g)
+        let deltaVib = (Math.random() * 0.10 - 0.05);
+        let vibCalculada = estadoFisicaMotor.vibracionG + deltaVib;
+        if (vibCalculada < 0.85) vibCalculada = 0.85 + Math.random() * 0.04;
+        if (vibCalculada > 1.35) vibCalculada = 1.35 - Math.random() * 0.04;
+        estadoFisicaMotor.vibracionG = parseFloat(vibCalculada.toFixed(2));
+        const vibFinal = estadoFisicaMotor.vibracionG;
+
         const hora = new Date().toLocaleTimeString();
 
         lecturasTemporalesTemp.push(tempFinal);
@@ -1015,7 +965,7 @@ function iniciarMedicionSimulada() {
             generalEstado.style.color = "#10B981";
         }
 
-        // Gráficos continuos dinámicos
+        // Gráficos continuos
         if (chartGeneral) {
             if (chartGeneral.data.labels.length > 15) {
                 chartGeneral.data.labels.shift();
@@ -1059,26 +1009,23 @@ function detenerMedicionSimulada() {
     if (btnIniciar) btnIniciar.disabled = false;
     if (btnDetener) btnDetener.disabled = true;
 
-    // Detectar vista activa para asignar el módulo correspondiente
     const vistaActiva = document.querySelector('.view.active-view');
     let nombreModulo = "Configuración & Moto";
     if (vistaActiva && vistaActiva.id === "telemetria") {
         nombreModulo = "Telemetría en Vivo";
     }
 
-    // Obtener promedios reales o lectura actual
-    let promTemp = (89.5).toFixed(1);
-    let promVib = (0.96).toFixed(2);
+    let promTemp = (88.0).toFixed(1);
+    let promVib = (0.95).toFixed(2);
 
     if (lecturasTemporalesTemp && lecturasTemporalesTemp.length > 0) {
         promTemp = (lecturasTemporalesTemp.reduce((a, b) => a + b, 0) / lecturasTemporalesTemp.length).toFixed(1);
         promVib = (lecturasTemporalesVib.reduce((a, b) => a + b, 0) / lecturasTemporalesVib.length).toFixed(2);
     }
 
-    // Actualizar etiquetas de estado en ambas vistas sin emojis
     const estadoLbl = document.getElementById("estado-medicion-lbl");
     if (estadoLbl) {
-        estadoLbl.innerHTML = `<span style="color:#10B981; font-weight:600;">[Guardado] Medición finalizada (${nombreModulo}): Temp ${promTemp}°C | Vib ${promVib}g guardada en historial y base de datos.</span>`;
+        estadoLbl.innerHTML = `<span style="color:#10B981; font-weight:600;">[Guardado] Medición finalizada (${nombreModulo}): Temp ${promTemp}°C | Vib ${promVib}g guardada en base de datos e historial.</span>`;
     }
     const teleLiveStatus = document.getElementById("telemetria-live-status-lbl");
     if (teleLiveStatus) {
@@ -1096,7 +1043,7 @@ function detenerMedicionSimulada() {
         descripcion = `Nivel de vibración promedio ${promVib}g elevado`;
     }
 
-    // GUARDADO EN HISTORIAL CON EL MÓDULO EXACTO
+    // Guardar en el historial (Firebase Firestore + Base de datos Vercel + Local)
     agregarEntradaHistorial(nombreModulo, descripcion, severidad, "Completado");
 }
 
