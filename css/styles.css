@@ -317,24 +317,48 @@ th { color: #64748B; font-weight: 600; }
     color: #15803D;
     font-size: 12px;
     font-weight: 700;
-    padding: 6px 12px;
+    padding: 6px 14px;
     border-radius: 20px;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     border: 1px solid #86EFAC;
+    box-shadow: 0 1px 3px rgba(22, 163, 74, 0.15);
+}
+.badge-live::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #16A34A;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+    animation: pulseBadgeDot 1.6s infinite;
+}
+@keyframes pulseBadgeDot {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
 }
 .badge-offline {
     background: #FEE2E2;
     color: #B91C1C;
     font-size: 12px;
     font-weight: 700;
-    padding: 6px 12px;
+    padding: 6px 14px;
     border-radius: 20px;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     border: 1px solid #FCA5A5;
+}
+.badge-offline::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #DC2626;
+    border-radius: 50%;
+    display: inline-block;
 }
 
 .axis-container {

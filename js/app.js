@@ -140,6 +140,7 @@ function inicializarFirebase() {
 
         // Listener en tiempo real de Cloud Firestore para sincronización instantánea
         conectarFirestoreTiempoReal();
+        conectarTelemetriaESP32();
 
     } catch (err) {
         console.warn("Aviso al inicializar Firebase:", err.message);
@@ -193,6 +194,7 @@ document.addEventListener("DOMContentLoaded", () => {
     inicializarGraficosESP32();
     cargarDatosMoto();
     cargarHistorialFallas();
+    conectarTelemetriaESP32();
 });
 
 // =========================================================================
@@ -747,6 +749,8 @@ function toggleChat() {
 // MÓDULO DISPOSITIVO ESP32 (HARDWARE REAL + SIMULACIÓN PAREJA)
 // =========================================================================
 let rtdbListenerActivo = false;
+let firestoreLiveListenerActivo = false;
+let timeoutInactividadESP32 = null;
 let chartDispositivoReal = null;
 let esp32LecturasTemp = [];
 let esp32LecturasVib = [];
@@ -759,13 +763,50 @@ let ultimaMarcaTiempoESP32 = 0;
 function conectarTelemetriaESP32() {
     inicializarGraficoDispositivo();
 
-    // 1. Conexión en tiempo real a Firebase Realtime Database (/dispositivo/live)
+    const marcarActivo = () => {
+        if (timeoutInactividadESP32) clearTimeout(timeoutInactividadESP32);
+        const badgeConn = document.getElementById("esp32-status-badge");
+        if (badgeConn) {
+            badgeConn.className = "badge-live";
+            badgeConn.innerText = "Transmisión Activa";
+        }
+        timeoutInactividadESP32 = setTimeout(() => {
+            if (badgeConn) {
+                badgeConn.className = "badge-offline";
+                badgeConn.innerText = "En espera de hardware";
+            }
+        }, 7000);
+    };
+
+    // 1. Conexión en tiempo real a Cloud Firestore (Colección 'dispositivo', Documento 'live')
+    if (db && !firestoreLiveListenerActivo) {
+        try {
+            firestoreLiveListenerActivo = true;
+            db.collection("dispositivo").doc("live").onSnapshot(doc => {
+                if (doc.exists) {
+                    marcarActivo();
+                    const data = doc.data();
+                    console.log("[Firestore Telemetría] Trama en vivo recibida:", data);
+                    actualizarVistaESP32(data);
+                }
+            }, err => {
+                console.warn("[Firestore Telemetría] Error listener:", err.message);
+                firestoreLiveListenerActivo = false;
+            });
+            console.log("[Firestore Telemetría] Listener conectado a dispositivo/live");
+        } catch (e) {
+            console.warn("[Firestore Telemetría] Exception:", e);
+        }
+    }
+
+    // 2. Conexión en tiempo real a Firebase Realtime Database (/dispositivo/live) por respaldo
     if (rtdb && !rtdbListenerActivo) {
         try {
             rtdbListenerActivo = true;
             rtdb.ref("dispositivo/live").on("value", snapshot => {
                 const data = snapshot.val();
                 if (data) {
+                    marcarActivo();
                     actualizarVistaESP32(data);
                 }
             });
@@ -775,7 +816,7 @@ function conectarTelemetriaESP32() {
         }
     }
 
-    // 2. Polling al endpoint serverless /api/esp32 de Vercel como respaldo
+    // 3. Polling de respaldo al endpoint serverless /api/esp32 de Vercel (si está disponible)
     if (pollingESP32Interval) clearInterval(pollingESP32Interval);
 
     const consultarEndpointESP32 = async () => {
@@ -785,8 +826,9 @@ function conectarTelemetriaESP32() {
                 const data = await resp.json();
                 if (data.hayDatosReales && data.ultimaTrama && data.timestamp !== ultimaMarcaTiempoESP32) {
                     ultimaMarcaTiempoESP32 = data.timestamp;
+                    marcarActivo();
                     actualizarVistaESP32(data.ultimaTrama);
-                } else if (!data.hayDatosReales && !rtdbListenerActivo) {
+                } else if (!data.hayDatosReales && !rtdbListenerActivo && !firestoreLiveListenerActivo) {
                     const badgeConn = document.getElementById("esp32-status-badge");
                     if (badgeConn) {
                         badgeConn.className = "badge-offline";
@@ -800,7 +842,7 @@ function conectarTelemetriaESP32() {
     };
 
     consultarEndpointESP32();
-    pollingESP32Interval = setInterval(consultarEndpointESP32, 2000);
+    pollingESP32Interval = setInterval(consultarEndpointESP32, 2500);
 }
 
 function inicializarGraficoDispositivo() {
@@ -843,6 +885,21 @@ function inicializarGraficoDispositivo() {
 
 function actualizarVistaESP32(data) {
     if (!data) return;
+
+    // Normalizar formato si proviene de REST API sin procesar { fields: { ... } }
+    if (data.fields) {
+        const flat = {};
+        for (const k in data.fields) {
+            const f = data.fields[k];
+            if (f.stringValue !== undefined) flat[k] = f.stringValue;
+            else if (f.doubleValue !== undefined) flat[k] = parseFloat(f.doubleValue);
+            else if (f.integerValue !== undefined) flat[k] = parseInt(f.integerValue, 10);
+            else if (f.booleanValue !== undefined) flat[k] = f.booleanValue;
+            else flat[k] = f;
+        }
+        data = flat;
+    }
+
     esp32UltimaTrama = data;
     esp32PacketsCount++;
 
@@ -852,21 +909,21 @@ function actualizarVistaESP32(data) {
     const elemTempState = document.getElementById("val-esp32-temp-state");
     if (elemTemp) elemTemp.innerText = `${tempVal.toFixed(1)} °C`;
     if (elemTempState) {
-        elemTempState.innerText = tempVal > 105 ? "[Alerta] Temperatura elevada" : "[Normal] Rango óptimo culata (Yamaha YCZ 110)";
+        elemTempState.innerText = tempVal > 105 ? "⚠️ [Alerta] Temperatura elevada" : "✅ [Normal] Rango óptimo culata (Yamaha YCZ 110)";
         elemTempState.style.color = tempVal > 105 ? "#F59E0B" : "#10B981";
     }
 
     // 2. Aceleración y Vibración MPU6050
-    const ax = parseFloat(data.ax || 0.08);
-    const ay = parseFloat(data.ay || 0.06);
-    const az = parseFloat(data.az || 0.95);
-    const vibTotal = typeof data.vibracion_total === "number" ? data.vibracion_total : Math.sqrt(ax*ax + ay*ay + az*az);
+    const ax = parseFloat(data.ax !== undefined ? data.ax : 0.08);
+    const ay = parseFloat(data.ay !== undefined ? data.ay : 0.06);
+    const az = parseFloat(data.az !== undefined ? data.az : 0.95);
+    const vibTotal = typeof data.vibracion_total === "number" ? data.vibracion_total : (data.vibracion && data.vibracion.magnitud ? parseFloat(data.vibracion.magnitud) : Math.sqrt(ax*ax + ay*ay + az*az));
 
     const elemVib = document.getElementById("val-esp32-vibe-mag");
     const elemVibState = document.getElementById("val-esp32-vibe-state");
     if (elemVib) elemVib.innerText = `${vibTotal.toFixed(2)} G`;
     if (elemVibState) {
-        elemVibState.innerText = vibTotal > 1.8 ? "[Alerta] Vibración elevada" : "[Normal] Nivel de vibración parejo y balanceado";
+        elemVibState.innerText = vibTotal > 1.8 ? "⚠️ [Alerta] Vibración elevada" : "✅ [Normal] Nivel de vibración armónico";
         elemVibState.style.color = vibTotal > 1.8 ? "#F59E0B" : "#10B981";
     }
 
@@ -878,13 +935,21 @@ function actualizarVistaESP32(data) {
     if (ayElem) ayElem.innerText = `${ay.toFixed(2)} G`;
     if (azElem) azElem.innerText = `${az.toFixed(2)} G`;
 
-    // Telemetría WiFi y Paquetes
+    // Telemetría WiFi, IP y Paquetes
     const packElem = document.getElementById("val-esp32-packets");
     const rssiElem = document.getElementById("val-esp32-rssi");
     const lastSeenElem = document.getElementById("esp32-last-seen");
+    const wifiElem = document.getElementById("esp32-wifi-name");
+    const ipElem = document.getElementById("esp32-ip-addr");
     const hora = new Date().toLocaleTimeString();
-    if (packElem) packElem.innerText = `${esp32PacketsCount} tram.`;
-    if (rssiElem) rssiElem.innerText = `Red: ${data.wifi || "iPhone Andres"} (-58 dBm)`;
+
+    if (wifiElem && data.wifi) wifiElem.innerText = data.wifi;
+    if (ipElem && data.ip) ipElem.innerText = data.ip;
+
+    const numTramas = data.paquetes !== undefined ? data.paquetes : (data.paquete !== undefined ? data.paquete : esp32PacketsCount);
+    if (packElem) packElem.innerText = `${numTramas} tram.`;
+    const rssiVal = data.wifiRSSI !== undefined ? data.wifiRSSI : -58;
+    if (rssiElem) rssiElem.innerText = `Red: ${data.wifi || "iPhone Andres"} (${rssiVal} dBm)`;
     if (lastSeenElem) lastSeenElem.innerText = hora;
 
     const badgeConn = document.getElementById("esp32-status-badge");

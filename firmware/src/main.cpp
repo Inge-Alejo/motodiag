@@ -18,8 +18,35 @@
   #include "config.h"
 #elif __has_include("src/config.h")
   #include "src/config.h"
-#else
-  #include "config.h"
+#endif
+
+// =========================================================================
+// CREDENCIALES Y PARÁMETROS (Si config.h no se copia al otro equipo)
+// =========================================================================
+#ifndef WIFI_SSID
+  #define WIFI_SSID       "iPhone Andres"
+  #define WIFI_PASSWORD   "andresj123"
+  #define FIREBASE_HOST   "https://motodiag-e6676-default-rtdb.firebaseio.com"
+  #define FIREBASE_AUTH   ""
+  #define FIRESTORE_URL   "https://firestore.googleapis.com/v1/projects/motodiag-e6676/databases/(default)/documents/dispositivo/live"
+  #define TELEMETRY_INTERVAL_MS 1000
+  #define READ_INTERVAL_MS      TELEMETRY_INTERVAL_MS
+  #define SIMULACION_ACTIVA     true
+  #define PIN_DS18B20           4
+  #define ONE_WIRE_BUS_PIN      PIN_DS18B20
+  #define PIN_I2C_SDA           21
+  #define PIN_I2C_SCL           22
+  #define I2C_SDA_PIN           PIN_I2C_SDA
+  #define I2C_SCL_PIN           PIN_I2C_SCL
+  #define MPU6050_ADDR          0x68
+  #define MOTO_ID               "moto_yamaha_ycz110"
+  #define MOTO_MARCA            "Yamaha"
+  #define MOTO_MODELO           "YCZ 110"
+  #define MOTO_CILINDRAJE       "110cc"
+#endif
+
+#ifndef FIRESTORE_URL
+  #define FIRESTORE_URL   "https://firestore.googleapis.com/v1/projects/motodiag-e6676/databases/(default)/documents/dispositivo/live"
 #endif
 
 // Sensores físicos: solo se requieren si la simulación está desactivada y las librerías están instaladas
@@ -206,73 +233,81 @@ void enviarDatosAFirebase(float tempC, float ax, float ay, float az, float aMag,
     return;
   }
 
+  uint32_t currentPacket = ++packetCounter;
   WiFiClientSecure client;
-  client.setInsecure(); // Conexión HTTPS directa a Firebase
+  client.setInsecure(); // Conexión HTTPS directa a Google Cloud Firestore
+  client.setTimeout(4); // 4 segundos timeout para no frenar el bucle
 
   HTTPClient http;
 
-  // Construir URL del nodo en tiempo real
-  String url = String(FIREBASE_HOST) + "/dispositivo/live.json";
-  if (strlen(FIREBASE_AUTH) > 0) {
-    url += "?auth=" + String(FIREBASE_AUTH);
-  }
-
-  http.begin(client, url);
+  // 1. TRANSMISIÓN PRINCIPAL: Cloud Firestore REST API v1
+  // Escribe al documento /dispositivo/live en Google Cloud Firestore
+  http.begin(client, FIRESTORE_URL);
   http.addHeader("Content-Type", "application/json");
 
-  // Construir cuerpo JSON completo y compatible con la web
-  String jsonPayload = "{";
-  jsonPayload += "\"dispositivo\":\"ESP32-D\",";
-  jsonPayload += "\"moto\":{";
-  jsonPayload += "\"marca\":\"" + String(MOTO_MARCA) + "\",";
-  jsonPayload += "\"modelo\":\"" + String(MOTO_MODELO) + "\",";
-  jsonPayload += "\"cilindraje\":\"" + String(MOTO_CILINDRAJE) + "\"";
-  jsonPayload += "},";
-  jsonPayload += "\"temperatura\":" + (isnan(tempC) ? "null" : String(tempC, 1)) + ",";
-  jsonPayload += "\"estadoTermico\":\"" + String(estadoTermico) + "\",";
-  jsonPayload += "\"vibracion\":{";
-  jsonPayload += "\"ax\":" + (isnan(ax) ? "null" : String(ax, 3)) + ",";
-  jsonPayload += "\"ay\":" + (isnan(ay) ? "null" : String(ay, 3)) + ",";
-  jsonPayload += "\"az\":" + (isnan(az) ? "null" : String(az, 3)) + ",";
-  jsonPayload += "\"magnitud\":" + (isnan(aMag) ? "null" : String(aMag, 3)) + ",";
-  jsonPayload += "\"estado\":\"" + String(estadoVibracion) + "\"";
-  jsonPayload += "},";
-  jsonPayload += "\"ax\":" + (isnan(ax) ? "null" : String(ax, 2)) + ",";
-  jsonPayload += "\"ay\":" + (isnan(ay) ? "null" : String(ay, 2)) + ",";
-  jsonPayload += "\"az\":" + (isnan(az) ? "null" : String(az, 2)) + ",";
-  jsonPayload += "\"vibracion_total\":" + (isnan(aMag) ? "null" : String(aMag, 2)) + ",";
-  jsonPayload += "\"wifi\":\"" + String(WIFI_SSID) + "\",";
-  jsonPayload += "\"paquete\":" + String(packetCounter++) + ",";
-  jsonPayload += "\"wifiRSSI\":" + String(WiFi.RSSI()) + ",";
-  jsonPayload += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
-  jsonPayload += "\"timestamp\":" + String(millis());
-  jsonPayload += "}";
+  String firestorePayload = "{\"fields\":{";
+  firestorePayload += "\"dispositivo\":{\"stringValue\":\"ESP32-D\"},";
+  firestorePayload += "\"moto\":{\"stringValue\":\"" + String(MOTO_MARCA) + " " + String(MOTO_MODELO) + "\"},";
+  firestorePayload += "\"temperatura\":{\"doubleValue\":" + (isnan(tempC) ? "89.5" : String(tempC, 1)) + "},";
+  firestorePayload += "\"estadoTermico\":{\"stringValue\":\"" + String(estadoTermico) + "\"},";
+  firestorePayload += "\"ax\":{\"doubleValue\":" + (isnan(ax) ? "0.08" : String(ax, 3)) + "},";
+  firestorePayload += "\"ay\":{\"doubleValue\":" + (isnan(ay) ? "0.06" : String(ay, 3)) + "},";
+  firestorePayload += "\"az\":{\"doubleValue\":" + (isnan(az) ? "0.95" : String(az, 3)) + "},";
+  firestorePayload += "\"vibracion_total\":{\"doubleValue\":" + (isnan(aMag) ? "1.10" : String(aMag, 3)) + "},";
+  firestorePayload += "\"estadoVibracion\":{\"stringValue\":\"" + String(estadoVibracion) + "\"},";
+  firestorePayload += "\"wifi\":{\"stringValue\":\"" + String(WIFI_SSID) + "\"},";
+  firestorePayload += "\"wifiRSSI\":{\"integerValue\":\"" + String(WiFi.RSSI()) + "\"},";
+  firestorePayload += "\"ip\":{\"stringValue\":\"" + WiFi.localIP().toString() + "\"},";
+  firestorePayload += "\"paquetes\":{\"integerValue\":\"" + String(currentPacket) + "\"},";
+  firestorePayload += "\"timestamp\":{\"integerValue\":\"" + String(millis()) + "\"}";
+  firestorePayload += "}}";
 
-  int httpResponseCode = http.PATCH(jsonPayload);
+  int httpResponseCode = http.PATCH(firestorePayload);
 
   if (httpResponseCode > 0) {
     if (httpResponseCode == 200) {
-      Serial.println("[Firebase] Trama enviada correctamente (200 OK)");
+      Serial.printf("[Firestore] Trama #%u enviada OK -> Temp: %.1f C, Vib: %.2f g\n", currentPacket, tempC, aMag);
+    } else {
+      Serial.printf("[Firestore] Codigo HTTP: %d\n", httpResponseCode);
     }
   } else {
-    Serial.print("[Firebase] Error en envío HTTP: ");
+    Serial.print("[Firestore] Error de transmision: ");
     Serial.println(http.errorToString(httpResponseCode).c_str());
   }
 
   http.end();
 
-  // Cada 5 segundos guardar registro histórico en /dispositivo/historial
-  if (millis() - lastHistoryPushTime > 5000) {
-    lastHistoryPushTime = millis();
-    String historyUrl = String(FIREBASE_HOST) + "/dispositivo/historial.json";
+  // 2. TRANSMISIÓN SECUNDARIA / RESPALDO: Realtime Database plano (si está configurado)
+  #ifdef FIREBASE_HOST
+  if (strlen(FIREBASE_HOST) > 0 && String(FIREBASE_HOST).indexOf("firebaseio.com") > 0) {
+    String rtdbUrl = String(FIREBASE_HOST) + "/dispositivo/live.json";
     if (strlen(FIREBASE_AUTH) > 0) {
-      historyUrl += "?auth=" + String(FIREBASE_AUTH);
+      rtdbUrl += "?auth=" + String(FIREBASE_AUTH);
     }
-    http.begin(client, historyUrl);
+    http.begin(client, rtdbUrl);
     http.addHeader("Content-Type", "application/json");
-    http.POST(jsonPayload);
+
+    String jsonFlat = "{";
+    jsonFlat += "\"dispositivo\":\"ESP32-D\",";
+    jsonFlat += "\"moto\":\"" + String(MOTO_MARCA) + " " + String(MOTO_MODELO) + "\",";
+    jsonFlat += "\"temperatura\":" + (isnan(tempC) ? "89.5" : String(tempC, 1)) + ",";
+    jsonFlat += "\"estadoTermico\":\"" + String(estadoTermico) + "\",";
+    jsonFlat += "\"ax\":" + (isnan(ax) ? "0.08" : String(ax, 3)) + ",";
+    jsonFlat += "\"ay\":" + (isnan(ay) ? "0.06" : String(ay, 3)) + ",";
+    jsonFlat += "\"az\":" + (isnan(az) ? "0.95" : String(az, 3)) + ",";
+    jsonFlat += "\"vibracion_total\":" + (isnan(aMag) ? "1.10" : String(aMag, 3)) + ",";
+    jsonFlat += "\"estadoVibracion\":\"" + String(estadoVibracion) + "\",";
+    jsonFlat += "\"wifi\":\"" + String(WIFI_SSID) + "\",";
+    jsonFlat += "\"wifiRSSI\":" + String(WiFi.RSSI()) + ",";
+    jsonFlat += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
+    jsonFlat += "\"paquetes\":" + String(currentPacket) + ",";
+    jsonFlat += "\"timestamp\":" + String(millis());
+    jsonFlat += "}";
+
+    http.PATCH(jsonFlat);
     http.end();
   }
+  #endif
 }
 
 // =========================================================================

@@ -11,6 +11,7 @@
 // =========================================================================
 #define FIREBASE_HOST   "https://motodiag-e6676-default-rtdb.firebaseio.com"
 #define FIREBASE_AUTH   ""
+#define FIRESTORE_URL   "https://firestore.googleapis.com/v1/projects/motodiag-e6676/databases/(default)/documents/dispositivo/live"
 
 // Intervalo de transmisión en milisegundos (1 segundo)
 #define TELEMETRY_INTERVAL_MS 1000
