@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%232563EB'/><path d='M10 16 L14 12 L18 20 L22 14' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/></svg>">
     <title>MotoDiag IA - Diagnóstico Predictivo & Telemetría</title>
-    <link rel="stylesheet" href="css/styles.css?v=1793080000000">
+    <link rel="stylesheet" href="css/styles.css?v=1793081000000">
     <!-- Chart.js para visualización de telemetría -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -197,8 +197,39 @@
                                 <strong>Última Trama:</strong> <span id="esp32-last-seen">Nunca</span>
                             </p>
                         </div>
-                        <div class="device-header-actions">
-                            <button onclick="conectarTelemetriaESP32()" id="btn-reconnect-esp32" class="btn-save" style="background: #2563EB; font-size: 13px; padding: 8px 14px;">Reconectar Hardware ESP32</button>
+                        <div class="device-header-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button onclick="guardarSesionTelemetria()" id="btn-guardar-telemetria" class="btn-save" style="background: #10B981; font-size: 13px; padding: 8px 14px; display: inline-flex; align-items: center; gap: 6px;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                                Guardar Sesión en Historial
+                            </button>
+                            <button onclick="conectarTelemetriaESP32()" id="btn-reconnect-esp32" class="btn-save" style="background: #2563EB; font-size: 13px; padding: 8px 14px; display: inline-flex; align-items: center; gap: 6px;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                Reconectar Hardware
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Banner de Guardado Contextual al Desconectar el ESP32 -->
+                    <div id="banner-desconexion-esp32" style="display: none; background: #FFFFFF; border: 1px solid #CBD5E1; border-left: 5px solid #F59E0B; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); animation: fadeIn 0.3s ease;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #F59E0B;"></span>
+                                    <h4 style="margin: 0; font-size: 14px; color: #0F172A; font-weight: 700;">ESP32 Desconectado · Sesión de Telemetría Finalizada</h4>
+                                </div>
+                                <p id="banner-desconexion-detalle" style="margin: 5px 0 0 0; font-size: 13px; color: #64748B;">
+                                    Se capturaron datos en vivo. ¿Deseas guardar el registro de esta sesión en el historial de fallas y base de datos?
+                                </p>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <button onclick="guardarSesionTelemetria()" class="btn-save" style="background: #10B981; font-size: 13px; padding: 7px 14px; display: inline-flex; align-items: center; gap: 6px;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                                    Guardar en Historial
+                                </button>
+                                <button onclick="cerrarBannerDesconexion()" style="background: none; border: 1px solid #CBD5E1; color: #64748B; border-radius: 6px; padding: 7px 12px; font-size: 13px; cursor: pointer; font-weight: 600;">
+                                    Descartar
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -380,7 +411,7 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=1793080000000"></script>
+    <script src="js/app.js?v=1793081000000"></script>
 
       <!-- NOTIFICACIÓN FLOTANTE DE GUARDADO EXITOSO -->
       <div id="toast-notification" style="display: none; position: fixed; top: 24px; right: 24px; background: #0F172A; color: white; padding: 14px 20px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.25); z-index: 10000; border-left: 5px solid #10B981; max-width: 380px; animation: fadeIn 0.3s ease;">

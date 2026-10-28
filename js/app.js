@@ -760,10 +760,14 @@ let esp32TickCounter = 0;
 let pollingESP32Interval = null;
 let ultimaMarcaTiempoESP32 = 0;
 
+let sesionTelemetriaGuardada = false;
+
 function conectarTelemetriaESP32() {
     inicializarGraficoDispositivo();
 
     const marcarActivo = () => {
+        sesionTelemetriaGuardada = false;
+        cerrarBannerDesconexion();
         if (timeoutInactividadESP32) clearTimeout(timeoutInactividadESP32);
         const badgeConn = document.getElementById("esp32-status-badge");
         if (badgeConn) {
@@ -773,7 +777,11 @@ function conectarTelemetriaESP32() {
         timeoutInactividadESP32 = setTimeout(() => {
             if (badgeConn) {
                 badgeConn.className = "badge-offline";
-                badgeConn.innerText = "En espera de hardware";
+                badgeConn.innerText = "ESP32 Desconectado";
+            }
+            // Si hubo actividad y aún no se guardó, ofrecer guardado al desconectar
+            if (esp32LecturasTemp.length > 0 && !sesionTelemetriaGuardada) {
+                mostrarBannerDesconexionTelemetria();
             }
         }, 7000);
     };
@@ -1025,6 +1033,108 @@ function limpiarTerminalESP32() {
     if (terminal) {
         terminal.innerHTML = '<div style="color:#64748B;">Monitor de tramas limpio. Esperando nuevas lecturas...</div>';
     }
+}
+
+// =========================================================================
+// GESTIÓN DE GUARDADO DE SESIÓN DE TELEMETRÍA ESP32
+// =========================================================================
+function guardarSesionTelemetria() {
+    const totalTramas = esp32LecturasTemp.length;
+    if (totalTramas === 0) {
+        if (!esp32UltimaTrama) {
+            alert("No hay lecturas registradas de la sesión actual de telemetría para guardar.");
+            return;
+        }
+        // Si hay una última trama recibida, usarla como muestra
+        const tVal = typeof esp32UltimaTrama.temperatura === "number" ? esp32UltimaTrama.temperatura : (parseFloat(esp32UltimaTrama.temperatura) || 89.2);
+        const vVal = typeof esp32UltimaTrama.vibracion_total === "number" ? esp32UltimaTrama.vibracion_total : (parseFloat(esp32UltimaTrama.vibracion_total) || 1.10);
+        esp32LecturasTemp.push(tVal);
+        esp32LecturasVib.push(vVal);
+    }
+
+    const n = esp32LecturasTemp.length;
+    const promTemp = (esp32LecturasTemp.reduce((a, b) => a + b, 0) / n).toFixed(1);
+    const maxTemp = Math.max(...esp32LecturasTemp).toFixed(1);
+
+    const promVib = (esp32LecturasVib.reduce((a, b) => a + b, 0) / n).toFixed(2);
+    const maxVib = Math.max(...esp32LecturasVib).toFixed(2);
+
+    let severidad = "Normal";
+    let diagnostico = "Operación Óptima del Motor (Yamaha YCZ 110)";
+    const modulo = "Telemetría en Vivo";
+
+    if (parseFloat(maxTemp) > 105.0) {
+        severidad = "Advertencia";
+        diagnostico = `Alerta Térmica Leve (Pico: ${maxTemp}°C)`;
+    }
+    if (parseFloat(maxVib) > 1.8) {
+        severidad = "Advertencia";
+        diagnostico = (diagnostico === "Operación Óptima del Motor (Yamaha YCZ 110)")
+            ? `Vibración Anómala (Pico: ${maxVib}g)`
+            : `${diagnostico} + Vibración Anómala (${maxVib}g)`;
+    }
+
+    const descripcion = `Sesión de hardware finalizada: ${n} tramas recibidas | Temp Media: ${promTemp}°C (Máx: ${maxTemp}°C) | Vib Media: ${promVib}g (Pico: ${maxVib}g) · Diagnóstico: ${diagnostico}`;
+
+    // 1. Guardar en Historial (Local + Base de datos Vercel + Cloud Firestore)
+    agregarEntradaHistorial(modulo, descripcion, severidad, "Completado");
+
+    // 2. Marcar como guardada y cerrar banner
+    sesionTelemetriaGuardada = true;
+    cerrarBannerDesconexion();
+
+    // 3. Feedback visual en botón de guardado
+    const btnGuardar = document.getElementById("btn-guardar-telemetria");
+    if (btnGuardar) {
+        const originalHTML = btnGuardar.innerHTML;
+        btnGuardar.innerHTML = "✅ ¡Sesión Guardada!";
+        btnGuardar.style.background = "#059669";
+        setTimeout(() => {
+            btnGuardar.innerHTML = originalHTML;
+            btnGuardar.style.background = "#10B981";
+        }, 3000);
+    }
+
+    // 4. Agregar mensaje al monitor terminal
+    const terminal = document.getElementById("terminal-esp32-logs");
+    if (terminal) {
+        const row = document.createElement("div");
+        const ts = new Date().toLocaleTimeString();
+        row.innerHTML = `<span style="color:#10B981; font-weight:700;">[${ts}] [GUARDADO EXITOSO]</span> ${descripcion}`;
+        terminal.prepend(row);
+    }
+
+    // 5. Notificación emergente toast
+    mostrarNotificacionGuardado(
+        "[Guardado] Telemetría Guardada",
+        `Sesión de ${n} tramas guardada en base de datos. Temp: ${promTemp}°C, Vib: ${promVib}g.`
+    );
+}
+
+function mostrarBannerDesconexionTelemetria() {
+    const banner = document.getElementById("banner-desconexion-esp32");
+    const detalle = document.getElementById("banner-desconexion-detalle");
+    if (!banner) return;
+
+    if (esp32LecturasTemp.length > 0) {
+        const n = esp32LecturasTemp.length;
+        const promTemp = (esp32LecturasTemp.reduce((a, b) => a + b, 0) / n).toFixed(1);
+        const promVib = (esp32LecturasVib.reduce((a, b) => a + b, 0) / n).toFixed(2);
+        if (detalle) {
+            detalle.innerHTML = `Se capturaron <strong>${n} tramas</strong> de telemetría en vivo. <strong>Temp Media:</strong> ${promTemp} °C | <strong>Vibración Media:</strong> ${promVib} G. ¿Deseas registrar esta sesión en el historial de fallas y diagnósticos?`;
+        }
+    } else {
+        if (detalle) {
+            detalle.innerText = "El ESP32 no está enviando tramas activas. Verifica que esté alimentado y conectado a la red WiFi.";
+        }
+    }
+
+    banner.style.display = "block";
+}
+
+function cerrarBannerDesconexion() {
+    const banner = document.getElementById("banner-desconexion-esp32");
+    if (banner) banner.style.display = "none";
 }
 
 function toggleSimularESP32() {
